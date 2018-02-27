@@ -8,7 +8,7 @@
 
 #import "PhotosSectionHeaderView.h"
 
-#import <UIView+AutoLayout.h>
+#import "PureLayout.h"
 
 #import "LocationManager.h"
 
@@ -19,6 +19,8 @@
 @interface PhotosSectionHeaderView ()
 
 @property (nonatomic, weak) UIView *gestureView;
+
+@property (nonatomic, strong) NSLayoutConstraint *rightTitleConstraint;
 
 @end
 
@@ -44,31 +46,34 @@
     
     [self setupConstrains];
     
-    [self.locationLabel setText:nil];
     [self.titleLabel setTextAlignment:NSTextAlignmentRight];
     [self.titleLabel setLineBreakMode:NSLineBreakByWordWrapping];
     [self.titleLabel setNumberOfLines:2];
     
     [self insertSubview:self.blurView atIndex:0];
     [self.titleLabel setTextColor:[UIColor redColor]];
-    [self.locationLabel setTextColor:[[UIColor redColor] lighterColor]];
     
     [self setUserInteractionEnabled:YES];
     
-    [self setBackgroundColor:[UIColor clearColor]];
+    [self setBackgroundColor:[UIColor colorWithWhite:1 alpha:0.8]];
     
     [self setupGestureViewConstrains];
 }
 
+- (void)prepareForReuse {
+    [self.titleLabel setText:nil];
+    
+    [self.rightTitleConstraint setConstant:0];
+}
+
 - (void)setupConstrains {
-    [self.titleLabel autoPinEdge:ALEdgeRight toEdge:ALEdgeRight ofView:self withOffset:-10];
-    NSLayoutConstraint * constraint = [self.titleLabel autoAlignAxisToSuperviewAxis:ALAxisHorizontal];
-    [constraint setPriority:100];
-    [self.locationLabel autoPinEdge:ALEdgeLeft toEdge:ALEdgeLeft ofView:self withOffset:10];
-    [self.locationLabel autoPinEdge:ALEdgeTop toEdge:ALEdgeBottom ofView:self.titleLabel];
+    self.rightTitleConstraint = [self.titleLabel autoPinEdge:ALEdgeRight toEdge:ALEdgeRight ofView:self];
+    [self.titleLabel autoPinEdge:ALEdgeLeft toEdge:ALEdgeLeft ofView:self withOffset:0 relation:NSLayoutRelationGreaterThanOrEqual];
+    [self.titleLabel autoAlignAxisToSuperviewAxis:ALAxisHorizontal];
     [self.blurView autoMatchDimension:ALDimensionHeight toDimension:ALDimensionHeight ofView:self];
     [self.blurView autoMatchDimension:ALDimensionWidth toDimension:ALDimensionWidth ofView:self];
     [self.blurView autoCenterInSuperview];
+   
 }
 
 - (void)setupGestureViewConstrains {
@@ -98,6 +103,21 @@
     } else {
         [self.titleLabel setAttributedText:[self attributedStringWithTitle:self.titleLabelText location:nil]];
     }
+    [self adjustTitleLabelRightConstraint];
+}
+
+- (void)setLocationString:(NSString *)location {
+    if (location) {
+        [self.titleLabel setAttributedText:[self attributedStringWithTitle:self.titleLabelText location:location]];
+    } else {
+        [self.titleLabel setAttributedText:[self attributedStringWithTitle:self.titleLabelText location:nil]];
+    }
+    [self adjustTitleLabelRightConstraint];
+}
+
+- (void)adjustTitleLabelRightConstraint {
+    if (self.titleLabel.text.length > 0) [self.rightTitleConstraint setConstant:-10];
+    else [self.rightTitleConstraint setConstant:0];
 }
 
 - (NSAttributedString *)attributedStringWithTitle:(NSString *)title location:(NSString *)location {
@@ -143,19 +163,14 @@
     return _titleLabel;
 }
 
-- (UILabel *)locationLabel {
-    if (!_locationLabel) {
-        _locationLabel = [self addSubviewClass:[UILabel class]];
-        [_locationLabel setUserInteractionEnabled:YES];
-    }
-    return _locationLabel;
-}
-
 - (UIView *)blurView {
     if (!_blurView) {
-        _blurView = [self addSubviewClass:[UIView class]];
-        [_blurView setBackgroundColor:[UIColor colorWithWhite:1.000 alpha:0.880]];
-        [_blurView setUserInteractionEnabled:YES];
+        UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
+        UIVisualEffectView *effectView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+        [effectView setTranslatesAutoresizingMaskIntoConstraints:NO];
+        [self addSubview:effectView];
+        //[effectView setAlpha:0];
+        _blurView = effectView;
     }
     return _blurView;
 }

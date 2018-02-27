@@ -1,67 +1,142 @@
 PODS:
-  - AFNetworking (1.3.4)
-  - AFOAuth1Client (0.3.3):
-    - AFNetworking (~> 1.3)
-  - Expecta (0.2.4)
-  - GPUImage (0.1.4)
-  - iOS-blur (0.0.5)
-  - JASidePanels (1.3.2)
-  - Mantle (1.4.1):
-    - Mantle/extobjc
-  - Mantle/extobjc (1.4.1)
-  - MYBlurIntroductionView (1.0.3)
-  - NSDate+TimeAgo (1.0.3)
-  - NSDate-Escort (1.3.0)
-  - OCMock (2.2.4)
-  - Overcoat (1.1):
-    - AFNetworking (~> 1.3.1)
-    - Mantle (~> 1.3)
-  - QMBParallaxScrollViewController (0.1)
-  - SDWebImage (3.5):
-    - SDWebImage/Core
-  - SDWebImage/Core (3.5)
-  - SVProgressHUD (1.0)
-  - UIColor+MLPFlatColors (1.0)
-  - UIImageViewModeScaleAspect (1.3)
-  - UIView+AutoLayout (1.3.0)
+  - 1PasswordExtension (1.8.2)
+  - AFNetworking (3.1.0):
+    - AFNetworking/NSURLSession (= 3.1.0)
+    - AFNetworking/Reachability (= 3.1.0)
+    - AFNetworking/Security (= 3.1.0)
+    - AFNetworking/Serialization (= 3.1.0)
+    - AFNetworking/UIKit (= 3.1.0)
+  - AFNetworking/NSURLSession (3.1.0):
+    - AFNetworking/Reachability
+    - AFNetworking/Security
+    - AFNetworking/Serialization
+  - AFNetworking/Reachability (3.1.0)
+  - AFNetworking/Security (3.1.0)
+  - AFNetworking/Serialization (3.1.0)
+  - AFNetworking/UIKit (3.1.0):
+    - AFNetworking/NSURLSession
+  - Bolts (1.8.1):
+    - Bolts/AppLinks (= 1.8.1)
+    - Bolts/Tasks (= 1.8.1)
+  - Bolts/AppLinks (1.8.1):
+    - Bolts/Tasks
+  - Bolts/Tasks (1.8.1)
+  - CocoaLumberjack (1.9.2):
+    - CocoaLumberjack/Extensions (= 1.9.2)
+  - CocoaLumberjack/Core (1.9.2)
+  - CocoaLumberjack/Extensions (1.9.2):
+    - CocoaLumberjack/Core
+  - COSTouchVisualizer (1.0.6)
+  - CSNotificationView (0.5.4)
+  - DAProgressOverlayView (1.0.2)
+  - DLFPhotosPicker (0.16.2)
+  - Expecta (1.0.5)
+  - GPUImage (0.1.7)
+  - Mantle (2.0.7):
+    - Mantle/extobjc (= 2.0.7)
+  - Mantle/extobjc (2.0.7)
+  - MBProgressHUD (0.9.2)
+  - NSDate+TimeAgo (1.0.6)
+  - NSDate-Escort (1.7.0)
+  - OCMock (3.3.1)
+  - OHHTTPStubs (5.1.0):
+    - OHHTTPStubs/Default (= 5.1.0)
+  - OHHTTPStubs/Core (5.1.0)
+  - OHHTTPStubs/Default (5.1.0):
+    - OHHTTPStubs/Core
+    - OHHTTPStubs/JSON
+    - OHHTTPStubs/NSURLSession
+    - OHHTTPStubs/OHPathHelpers
+  - OHHTTPStubs/JSON (5.1.0):
+    - OHHTTPStubs/Core
+  - OHHTTPStubs/NSURLSession (5.1.0):
+    - OHHTTPStubs/Core
+  - OHHTTPStubs/OHPathHelpers (5.1.0)
+  - OMGHTTPURLRQ/UserAgent (3.1.2)
+  - PureLayout (3.0.2)
+  - SDWebImage (3.8.1):
+    - SDWebImage/Core (= 3.8.1)
+  - SDWebImage/Core (3.8.1)
+  - SVProgressHUD (2.0.3)
+  - TDImageColors (0.3.1)
+  - TDOAuth (1.1.2):
+    - OMGHTTPURLRQ/UserAgent
+  - TMCache (2.1.0)
+  - TUSafariActivity (1.0.4)
+  - UIColor-Crayola (1.0)
+  - UIImageViewModeScaleAspect (1.5)
+  - YapDatabase (2.5.4):
+    - YapDatabase/standard (= 2.5.4)
+  - YapDatabase/common (2.5.4):
+    - CocoaLumberjack (~> 1)
+  - YapDatabase/standard (2.5.4):
+    - YapDatabase/common
 
 DEPENDENCIES:
-  - AFOAuth1Client
-  - Expecta (~> 0.2.3)
+  - 1PasswordExtension
+  - AFNetworking (~> 3.0)
+  - Bolts
+  - COSTouchVisualizer
+  - CSNotificationView
+  - DAProgressOverlayView
+  - DLFPhotosPicker
+  - Expecta
   - GPUImage
-  - iOS-blur
-  - JASidePanels
   - Mantle
-  - MYBlurIntroductionView (~> 1.0.0)
+  - MBProgressHUD
   - NSDate+TimeAgo
   - NSDate-Escort
-  - OCMock (~> 2.2.1)
-  - Overcoat (= 1.1)
-  - QMBParallaxScrollViewController
-  - SDWebImage (= 3.5)
+  - OCMock
+  - OHHTTPStubs
+  - PureLayout
+  - SDWebImage
   - SVProgressHUD
-  - UIColor+MLPFlatColors (~> 1.0)
+  - TDImageColors
+  - TDOAuth
+  - TMCache
+  - TUSafariActivity
+  - UIColor-Crayola
   - UIImageViewModeScaleAspect
-  - UIView+AutoLayout
+  - YapDatabase (from `git@github.com:nicnocquee/YapDatabase.git`)
+
+EXTERNAL SOURCES:
+  YapDatabase:
+    :git: git@github.com:nicnocquee/YapDatabase.git
+
+CHECKOUT OPTIONS:
+  YapDatabase:
+    :commit: 3e0feff462deb7977252ff5914cf050114c6ea4e
+    :git: git@github.com:nicnocquee/YapDatabase.git
 
 SPEC CHECKSUMS:
-  AFNetworking: e403d4333a4e1956cb3fe42364c3c879f820c9a0
-  AFOAuth1Client: 8b06e54087732068e19c4efcd7bed5d74bc9538a
-  Expecta: 5c147dedfea5fbcf773995f7e65020abcc936ce5
-  GPUImage: f9b32e12350792a630e596ffc7b050bea3662670
-  iOS-blur: 2610bc818831fa4eec051a7193e47639d480fb32
-  JASidePanels: c0e642a7311ec9cc9adfa616fa4a795e4e169f20
-  Mantle: 0714cdb2b8559d9e6c2410d6a8529e3307bff189
-  MYBlurIntroductionView: 0ed5699c570ceb1cdfc86dc6cf7dae869950d677
-  NSDate+TimeAgo: ca09306750ac2564418042aa10cf8365c36d2cee
-  NSDate-Escort: 5ec28190777f3c6042f88bbbb447a3c552e0d540
-  OCMock: 5008fae4b4789b8fc3e48cd7660f2eb5ef8ce89e
-  Overcoat: 4839bdbe2274a9451f6cedaf8c17742d2ab82818
-  QMBParallaxScrollViewController: 46ccfa5438f07de13cc7b19766288c8e5014a83d
-  SDWebImage: f1a72472f8a2d54445f1fedafe2090593d9caf7f
-  SVProgressHUD: 5e10939a296debf5fe5a5895eda9539b8b2114f1
-  UIColor+MLPFlatColors: 8631d7f050b0e5afd9af178a60319891c5113d0e
-  UIImageViewModeScaleAspect: 74f439899d4f28625ea08c947bfad5a3339b0741
-  UIView+AutoLayout: 43373a18797954fd8ee3b1423af364f1b80a2af8
+  1PasswordExtension: 303f2b7bbf6dc19ede3090bd6b5987530648d687
+  AFNetworking: 5e0e199f73d8626b11e79750991f5d173d1f8b67
+  Bolts: 89c0c6dd1b9c975a3452a62d57a6be6739e5f433
+  CocoaLumberjack: 628fca2e88ef06f7cf6817309aa405f325d9a6fa
+  COSTouchVisualizer: a398089327a6c02897823614d7447ccc97198997
+  CSNotificationView: 0792f5220163c2befaf1a9716aa3d5a7d6bd4fb1
+  DAProgressOverlayView: 08bbeaab98a0604fddb77672f100e8389472cec2
+  DLFPhotosPicker: cdd8172f8de662f78bdbf1e10efdbb7fe3d26b7b
+  Expecta: e1c022fcd33910b6be89c291d2775b3fe27a89fe
+  GPUImage: 733a5f0fab92df9de1c37ba9df520a833ccb406d
+  Mantle: bc40bb061d8c2c6fb48d5083e04d928c3b7f73d9
+  MBProgressHUD: 1569cf7ace17a8bac47aabfbb8580a49690386d1
+  NSDate+TimeAgo: 35601c619b2d59290055e4fe76e61d97677a2360
+  NSDate-Escort: 3469fefab423c094108c2e864416b61b6ac0edbc
+  OCMock: f3f61e6eaa16038c30caa5798c5e49d3307b6f22
+  OHHTTPStubs: 592f74439d2d72615115cf99a954237a3fbe26e5
+  OMGHTTPURLRQ: 38316b56d88125c600bcdb16df8329147da2b0ee
+  PureLayout: 4d550abe49a94f24c2808b9b95db9131685fe4cd
+  SDWebImage: 35f9627a3e44b4f292a8a8ce6a531fa488239b91
+  SVProgressHUD: b0830714205bea1317ea1a2ebc71e5633af334d4
+  TDImageColors: 73feaadb478d4ffa9c3d5c09e2621f8768aa02f9
+  TDOAuth: f7e356e834295b83c7b5066ee72a30f128c5f722
+  TMCache: 95ebcc9b3c7e90fb5fd8fc3036cba3aa781c9bed
+  TUSafariActivity: afc55a00965377939107ce4fdc7f951f62454546
+  UIColor-Crayola: 0d2f68032cbea6ba4669b360ffb641d203b41a0d
+  UIImageViewModeScaleAspect: 11a790a0b9d248a13dc63e3a78991f1463b6d84e
+  YapDatabase: 52370b36f692e23c41c86e60f3bbf81b1c8ae44a
 
-COCOAPODS: 0.32.1
+PODFILE CHECKSUM: a0fee867d16aae69b491e60a23f707120c030c98
+
+COCOAPODS: 1.1.0.beta.1

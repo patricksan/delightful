@@ -34,6 +34,10 @@ NSString *PBX_favoritesAlbumIdentifier = @"PBX_FAVORITES_ALBUM";
     return self.albumId;
 }
 
+- (NSString *)titleName {
+    return self.name;
+}
+
 + (Album *)allPhotosAlbum {
     NSError *error;
     Album *a = [MTLJSONAdapter modelOfClass:[Album class] fromJSONDictionary:@{
@@ -44,41 +48,19 @@ NSString *PBX_favoritesAlbumIdentifier = @"PBX_FAVORITES_ALBUM";
     return a;
 }
 
-+ (Album *)downloadHistoryAlbum {
-    NSError *error;
-    Album *a = [MTLJSONAdapter modelOfClass:[Album class] fromJSONDictionary:@{
-                                                                               @"id": PBX_downloadHistoryIdentifier,
-                                                                               @"name":NSLocalizedString(@"Downloaded", nil),
-                                                                               @"cover":@{@"id": @"COVER_PHOTO_ALL_ALBUM", @"filenameOriginal":@""}
-                                                                               } error:&error];
-    NSArray *downloaded = [[DownloadedImageManager sharedManager] photos];
-    [a setValue:downloaded forKey:NSStringFromSelector(@selector(photos))];
-    return a;
-}
-
-+ (Album *)favoritesAlbum {
-    NSError *error;
-    Album *a = [MTLJSONAdapter modelOfClass:[Album class] fromJSONDictionary:@{
-                                                                               @"id": PBX_favoritesAlbumIdentifier,
-                                                                               @"name":NSLocalizedString(@"Favorites", nil),
-                                                                               @"cover":@{@"id": @"COVER_PHOTO_ALL_ALBUM", @"filenameOriginal":@""}
-                                                                               } error:&error];
-    NSArray *downloaded = [[FavoritesManager sharedManager] photos];
-    [a setValue:downloaded forKey:NSStringFromSelector(@selector(photos))];
-    return a;
-}
-
 #pragma mark - Mantle
 
 + (NSDictionary *)JSONKeyPathsByPropertyKey {
-    return [[super class] photoBoxJSONKeyPathsByPropertyKeyWithDictionary:@{@"albumId": @"id",
-                                                                            @"coverId":@"cover.id",
-                                                                            @"coverURL":@"cover.path200x200xCR",
-                                                                            @"albumCover": @"cover"}];
+    return [[NSDictionary mtl_identityPropertyMapWithModel:[self class]] mtl_dictionaryByAddingEntriesFromDictionary:[[super class] photoBoxJSONKeyPathsByPropertyKeyWithDictionary:@{
+                                                                                                                                                                                      @"albumId": @"id",
+                                                                                                                                                                                      @"coverId":@"cover.id",
+                                                                                                                                                                                @"coverURL":@"cover.path200x200xCR",
+                                                                                                                                                                                      @"albumCover": @"cover"
+                                                                                                                                                                                      }]];
 }
 
 + (NSValueTransformer *)albumCoverJSONTransformer {
-    return [NSValueTransformer mtl_JSONDictionaryTransformerWithModelClass:[Photo class]];
+    return [MTLJSONAdapter dictionaryTransformerWithModelClass:[Photo class]];
 }
 
 

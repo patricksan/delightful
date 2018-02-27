@@ -6,8 +6,8 @@
 //  Copyright (c) 2013 Touches. All rights reserved.
 //
 
-#import "AlbumsViewController.h"
+#import "PhotosCollectionWithSearchViewController.h"
 
-@interface TagsViewController : AlbumsViewController
+@interface TagsViewController : PhotosCollectionWithSearchViewController
 
 @end

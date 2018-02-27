@@ -11,11 +11,12 @@
 extern NSString *const PhotoBoxLocationPlacemarkDidFetchNotification;
 
 #import <CoreLocation/CoreLocation.h>
+#import "Bolts.h"
 
 @interface LocationManager : NSObject
 
 + (id)sharedManager;
 
-- (void)nameForLocation:(CLLocation*)location completionHandler:(void(^)(NSArray* placemarks, NSError* error))completionHandler;
+- (BFTask *)nameForLocation:(CLLocation *)location;
 
 @end

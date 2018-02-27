@@ -8,7 +8,7 @@
 
 #import <Foundation/Foundation.h>
 
-#import <AFOAuth1Client.h>
+#import "AFOAuth1Client.h"
 
 extern NSString *PhotoBoxAccessTokenDidAcquiredNotification;
 
@@ -21,6 +21,7 @@ extern NSString *PhotoBoxAccessTokenDidAcquiredNotification;
 @property (nonatomic, strong) AFOAuth1Token *oauthToken;
 @property (nonatomic, assign, getter = isUserLoggedIn) BOOL userLoggedIn;
 @property (nonatomic, assign) BOOL isShowingLoginPage;
+@property (nonatomic, assign) BOOL isGuestUser;
 
 - (void)setBaseURL:(NSURL *)baseURL
        consumerKey:(NSString *)consumerKey
@@ -29,14 +30,15 @@ extern NSString *PhotoBoxAccessTokenDidAcquiredNotification;
        oauthSecret:(NSString *)oauthSecret;
 
 - (void)setup;
-- (void)startOAuthAuthorizationWithServerURL:(NSString *)serverStringURL;
+- (NSURL *)startOAuthAuthorizationWithServerURL:(NSString *)serverStringURL;
 - (void)continueOauthAuthorizationWithQuery:(NSString *)query;
 - (void)openLoginFromStoryboardWithIdentifier:(NSString *)storyboardId;
 - (void)deleteTokens;
 - (void)logout;
+- (void)logoutWithShowingLoginScreen:(BOOL)show;
 - (BOOL)isUserLoggingIn;
 
-- (void)connectAsTester;
+- (void)connectAsGuest:(NSURL *)url;
 
 + (NSURL *)oAuthInitialUrlForServer:(NSString *)server;
 + (NSURL *)oAuthAccessUrlForServer:(NSString *)server;

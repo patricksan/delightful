@@ -8,13 +8,9 @@
 
 #import "AppDelegate.h"
 
-#import "PhotoBoxNavigationControllerDelegate.h"
-
 #import "ConnectionManager.h"
 
 #import "NPRImageDownloader.h"
-
-#import "IntroViewController.h"
 
 #import <MessageUI/MessageUI.h>
 
@@ -26,19 +22,21 @@
 
 #import "TagsViewController.h"
 
-#import "AlbumsTagsViewController.h"
-
 #import "StickyHeaderFlowLayout.h"
-
-#import "PanelsContainerViewController.h"
 
 #import "Album.h"
 
-#import <JASidePanelController.h>
+#import "DLFImageUploader.h"
 
-#import "LeftViewController.h"
+#import "SyncEngine.h"
 
-//#import "HintsViewController.h"
+#import "SDWebImageManager.h"
+
+// #import <COSTouchVisualizerWindow.h>
+
+static void * imageDownloadContext = &imageDownloadContext;
+
+static void * imageUploadContext = &imageUploadContext;
 
 @interface AppDelegate () <MFMailComposeViewControllerDelegate, MFMessageComposeViewControllerDelegate>
 
@@ -52,48 +50,25 @@
         // if unit test, need to return quickly. Reference: http://www.objc.io/issue-1/testing-view-controllers.html
         return YES;
     }
+        
+    [[[SDWebImageManager sharedManager] imageCache] setMaxCacheAge:DEFAULT_PHOTOS_CACHE_AGE];
     
-    //[[ConnectionManager sharedManager] logout];
-    //[[NSUserDefaults standardUserDefaults] removeObjectForKey:PBX_SHOWN_INTRO_VIEW_USER_DEFAULT_KEY];
-    //[[NSUserDefaults standardUserDefaults] synchronize];
-//    [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"com.delightful.kDownloadedImageManagerKey"];
-//    [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"com.delightful.kFavoritesManagerKey"];
-//    [[NSUserDefaults standardUserDefaults] synchronize];
-    
-    PanelsContainerViewController *rootViewController = [[PanelsContainerViewController alloc] init];
-    
-    self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-    [self.window setRootViewController:rootViewController];
     [self.window setTintColor:[UIColor redColor]];
-    [self.window makeKeyAndVisible];
-    
-    PhotosViewController *photosViewController = [[PhotosViewController alloc] initWithCollectionViewLayout:[[StickyHeaderFlowLayout alloc] init]];
-    UINavigationController *photosNavigationViewController = [[UINavigationController alloc] initWithRootViewController:photosViewController];
-    [photosViewController setItem:[Album allPhotosAlbum]];
-    
-    AlbumsViewController *albumsViewController = [[AlbumsViewController alloc] initWithCollectionViewLayout:[[UICollectionViewFlowLayout alloc] init]];
-    TagsViewController *tagsViewController = [[TagsViewController alloc] initWithCollectionViewLayout:[[UICollectionViewFlowLayout alloc] init]];
-    AlbumsTagsViewController *albumsTagsViewController = [[AlbumsTagsViewController alloc] init];
-    [albumsTagsViewController setViewControllers:@[albumsViewController, tagsViewController]];
-    LeftViewController *left = [[LeftViewController alloc] initWithRootViewController:albumsTagsViewController];
-    [rootViewController setLeftPanel:left];
-    [rootViewController setCenterPanel:photosNavigationViewController];
-    
-    self.navigationDelegate = [[PhotoBoxNavigationControllerDelegate alloc] init];
-    [photosNavigationViewController setDelegate:self.navigationDelegate];
     
     [self runCrashlytics];
-
-    [[NPRImageDownloader sharedDownloader] addObserver:self forKeyPath:@"numberOfDownloads" options:0 context:NULL];
-    
-    //[self showUpdateInfoViewIfNeeded];
-    
-//    HintsViewController *hints = [[HintsViewController alloc] init];
-//    UINavigationController *navCon = [[UINavigationController alloc] initWithRootViewController:hints];
-//    [rootViewController presentViewController:navCon animated:YES completion:nil];
     
     return YES;
 }
+
+/*
+ // uncomment this to show touches when recording demo
+- (COSTouchVisualizerWindow *)window
+{
+    static COSTouchVisualizerWindow *visWindow = nil;
+    if (!visWindow) visWindow = [[COSTouchVisualizerWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+    return visWindow;
+}
+ */
 							
 - (void)applicationWillResignActive:(UIApplication *)application
 {
@@ -107,7 +82,7 @@
     // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
     
     NSString *appVersion = [NSString stringWithFormat:@"%@ %@", [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"], [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleVersion"]];
-    NSLog(@"App version: %@", appVersion);
+    PBX_LOG(@"App version: %@", appVersion);
     [[NSUserDefaults standardUserDefaults] setObject:appVersion forKey:APP_VERSION_KEY];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
@@ -139,28 +114,6 @@
     return YES;
 }
 
-#pragma mark - Navigation
-
-- (void)showAllPhotosWithStoryboard:(UIStoryboard *)storyBoard rootViewController:(UINavigationController *)rootNavigationController {
-    PhotosViewController *photos = [storyBoard instantiateViewControllerWithIdentifier:@"photosViewController"];
-    [photos setItem:[Album allPhotosAlbum]];
-    [rootNavigationController pushViewController:photos animated:NO];
-}
-
-#pragma mark - Orientation
-//
-//- (NSUInteger)application:(UIApplication *)application supportedInterfaceOrientationsForWindow:(UIWindow *)window{
-//    NSUInteger orientations = UIInterfaceOrientationMaskAllButUpsideDown;
-//    
-//    if(self.window.rootViewController){
-//        UIViewController *presentedViewController = [[(UINavigationController *)self.window.rootViewController viewControllers] lastObject];
-//        orientations = [presentedViewController supportedInterfaceOrientations];
-//    }
-//    
-//    return orientations;
-//}
-
-
 #pragma mark - Unit Test
 
 static BOOL isRunningTests(void)
@@ -180,9 +133,10 @@ static BOOL isRunningTests(void)
         NSDictionary *dict = [[NSDictionary alloc] initWithContentsOfFile:filePath];
         if (dict) {
             NSString *apiKey = [dict objectForKey:@"key"];
-            if (apiKey && apiKey.length > 0) {
+            if ((apiKey && apiKey.length > 0)  && ![apiKey isEqualToString:@"<YOUR_KEY_HERE>"]) {
+                PBX_LOG(@"Starting Crashlytics");
                 if (![Crashlytics startWithAPIKey:apiKey]) {
-                    NSLog(@"No crashlytics");
+                    PBX_LOG(@"No crashlytics");
                 }
             }
         }
@@ -190,23 +144,8 @@ static BOOL isRunningTests(void)
 #endif
 }
 
-#pragma mark - Observer
-
-- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
-    if ([keyPath isEqualToString:NSStringFromSelector(@selector(numberOfDownloads))]) {
-        if ([[NPRImageDownloader sharedDownloader] numberOfDownloads] > 0) {
-            NSString *text = [NSString stringWithFormat:NSLocalizedString(@"Downloading %1$d photo(s)", nil), [[NPRImageDownloader sharedDownloader] numberOfDownloads]];
-            NSString *tapToSee = @"Tap to see progress";
-            text = [text stringByAppendingString:[NSString stringWithFormat:@"\n%@", tapToSee]];
-            NSMutableAttributedString *attributedString = [[NSMutableAttributedString alloc] initWithString:text];
-            [attributedString addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:8] range:[text rangeOfString:tapToSee]];
-            [[NPRNotificationManager sharedManager] postNotificationWithImage:nil position:NPRNotificationPositionBottom type:NPRNotificationTypeNone string:attributedString accessoryType:NPRNotificationAccessoryTypeActivityView accessoryView:nil duration:0 onTap:^{
-                [[NPRImageDownloader sharedDownloader] showDownloads];
-            }];
-        } else {
-            [[NPRNotificationManager sharedManager] postNotificationWithImage:nil position:NPRNotificationPositionBottom type:NPRNotificationTypeSuccess string:NSLocalizedString(@"Image(s) are saved to Photo gallery", nil) accessoryType:NPRNotificationAccessoryTypeNone accessoryView:nil duration:3 onTap:nil];
-        }
-    }
+- (void)showNotificationString:(id)attributedString type:(NPRNotificationType)type accessoryType:(NPRNotificationAccessoryType)accessoryType duration:(NSInteger)duration onTap:(void(^)())onTap {
+    [[NPRNotificationManager sharedManager] postNotificationWithImage:nil position:NPRNotificationPositionBottom type:type string:attributedString accessoryType:accessoryType accessoryView:nil duration:duration onTap:onTap];
 }
 
 #pragma mark - Message, Mail
@@ -217,29 +156,6 @@ static BOOL isRunningTests(void)
 
 - (void)mailComposeController:(MFMailComposeViewController *)controller didFinishWithResult:(MFMailComposeResult)result error:(NSError *)error {
     [[UIWindow topMostViewController] dismissViewControllerAnimated:YES completion:nil];
-}
-
-#pragma mark - Intro
-
-- (BOOL)showUpdateInfoViewIfNeeded {
-    if ([[ConnectionManager sharedManager] isUserLoggedIn]) {
-        NSString *currentVersion = [[NSBundle mainBundle] infoDictionary][@"CFBundleShortVersionString"];
-        if (![currentVersion isEqualToString:[[NSUserDefaults standardUserDefaults] objectForKey:PBX_SHOWN_INTRO_VIEW_USER_DEFAULT_KEY]]) {
-            if ([self versionInfOPlistExistsForVersion:currentVersion]) {
-                IntroViewController *intro = [[IntroViewController alloc] init];
-                [[UIWindow topMostViewController] presentViewController:intro animated:YES completion:nil];
-                [[NSUserDefaults standardUserDefaults] setObject:currentVersion forKey:PBX_SHOWN_INTRO_VIEW_USER_DEFAULT_KEY];
-                [[NSUserDefaults standardUserDefaults] synchronize];
-                return YES;
-            }
-        }
-    }
-    return NO;
-}
-
-- (BOOL)versionInfOPlistExistsForVersion:(NSString *)version {
-    NSString * filePath = [[NSBundle bundleForClass:[self class]] pathForResource:version ofType:@"plist"];
-    return (filePath)?YES:NO;
 }
 
 @end

@@ -14,11 +14,9 @@
 
 #import "UICollectionViewCell+Additionals.h"
 
-#import <UIView+AutoLayout.h>
+#import "PureLayout.h"
 
 @interface PhotoCell ()
-
-@property (nonatomic, strong) UIView *selectedView;
 
 @end
 
@@ -26,31 +24,13 @@
 
 @synthesize item = _item;
 
-- (id)initWithCoder:(NSCoder *)aDecoder {
-    self = [super initWithCoder:aDecoder];
-    if (self) {
-        [self setup];
-    }
-    return self;
-}
-
-- (id)initWithFrame:(CGRect)frame
-{
-    self = [super initWithFrame:frame];
-    if (self) {
-        [self setup];
-    }
-    return self;
-}
-
-- (void)awakeFromNib {
-    [super awakeFromNib];
-    
-    [self setText:nil];
-}
 
 - (void)setup {
     [super setup];
+    
+    [self.photoTitle setHidden:YES];
+    [self.photoTitleBackgroundView setHidden:YES];
+    [self.dateTitle setHidden:YES];
     
     [self.photoTitleBackgroundView autoMatchDimension:ALDimensionWidth toDimension:ALDimensionWidth ofView:self.contentView];
     [self.photoTitleBackgroundView autoPinEdge:ALEdgeTop toEdge:ALEdgeTop ofView:self.photoTitle withOffset:-10];
@@ -89,67 +69,54 @@
         if (!URL) {
             URL = photo.pathOriginal;
         }
-        [self.cellImageView setImageWithURL:URL placeholderImage:nil completed:^(UIImage *image, NSError *error, SDImageCacheType cacheType) {
-            
+        [self.cellImageView sd_setImageWithURL:URL placeholderImage:nil completed:^(UIImage *image, NSError *error, SDImageCacheType cacheType, NSURL *imageURL) {
+            if (image) {
+                [photo setPlaceholderImage:image];
+            }
         }];
-        [self setText:[self photoCellTitle]];
-    }
-}
-
-- (void)setNumberOfColumns:(NSInteger)numberOfColumns {
-    if (_numberOfColumns != numberOfColumns) {
-        _numberOfColumns = numberOfColumns;
-        if (self.item) {
+        
+        if (self.showTitles) {
             [self setText:[self photoCellTitle]];
         }
     }
 }
 
-- (void)setSelected:(BOOL)selected {
-    if (self.isSelected!=selected) {
-        [super setSelected:selected];
-        [self showSelectedView:selected];
+- (void)setShowTitles:(BOOL)showTitles {
+    if (_showTitles != showTitles) {
+        _showTitles = showTitles;
+        
+        if (_showTitles) {
+            [self.photoTitleBackgroundView setHidden:NO];
+            [self.photoTitle setHidden:NO];
+            [self.dateTitle setHidden:NO];
+            [self setText:[self photoCellTitle]];
+        } else {
+            [self.photoTitleBackgroundView setHidden:YES];
+            [self.photoTitle setHidden:YES];
+            [self.dateTitle setHidden:YES];
+        }
     }
 }
 
 - (void)setText:(id)text {
-    [self.photoTitleBackgroundView setHidden:(text)?NO:YES];
     [self.photoTitle setText:text];
     if (text) {
         [self.dateTitle setText:[self dateString]];
     } else [self.dateTitle setText:nil];
 }
 
-- (void)showSelectedView:(BOOL)selected {
-    if (selected) {
-        if (!self.selectedView) {
-            self.selectedView = [[UIView alloc] initWithFrame:self.bounds];
-            [self.selectedView setBackgroundColor:[UIColor whiteColor]];
-            [self.selectedView setAlpha:0.5];
-            [self.contentView addSubview:self.selectedView];
-        }
-    } else {
-        if (self.selectedView) {
-            [self.selectedView removeFromSuperview];
-            self.selectedView = nil;
-        }
-    }
-}
-
 #pragma mark - Getters
 
 - (id)photoCellTitle {
     if (self.item) {
-        if (_numberOfColumns < 3) {
-            Photo *photo = (Photo *)self.item;
-            return  photo.filenameOriginal;
-        }
+        Photo *photo = (Photo *)self.item;
+        return  photo.filenameOriginal;
     }
     return nil;
 }
 
 - (id)dateString {
-    if (_numberOfColumns < 3) {
+    if (self.item) {
         Photo *photo = (Photo *)self.item;
         return  [photo.dateTakenString localizedDate];
     }
@@ -192,5 +159,7 @@
     }
     return _photoTitleBackgroundView;
 }
+
+
 
 @end

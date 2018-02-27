@@ -7,6 +7,9 @@
 //
 
 #import <Foundation/Foundation.h>
+#import "Bolts.h"
+
+@class Photo;
 
 extern NSString *const NPRImageDownloadDidStartNotification;
 extern NSString *const NPRImageDownloadDidFinishNotification;
@@ -15,15 +18,9 @@ extern NSString *const NPRImageDownloadDidFinishNotification;
 
 @property (nonatomic, strong) NSURL *URL;
 @property (nonatomic, strong) UIImage *thumbnail;
-@property (nonatomic, strong) id operation;
-
-- (NSString *)name;
-
-- (id)initWithURL:(NSURL *)URL
-        thumbnail:(UIImage *)thumbnail
-         progress:(void (^)(NPRImageDownloaderOperation *operation, NSUInteger bytesRead, long long totalBytesRead, long long totalBytesExpectedToRead))block
-          success:(void (^)(NPRImageDownloaderOperation *operation, NSURLRequest *request, NSHTTPURLResponse *response, UIImage *image))success
-          failure:(void (^)(NPRImageDownloaderOperation *operation, NSURLRequest *request, NSHTTPURLResponse *response, NSError *error))failure;
+@property (nonatomic, strong) NSString *name;
+@property (nonatomic, assign) NSUInteger taskIdentifier;
+@property (nonatomic, strong) Photo *photo;
 
 @end
 
@@ -38,24 +35,20 @@ extern NSString *const NPRImageDownloadDidFinishNotification;
 
 @class Photo;
 
-@interface NPRImageDownloader : NSObject
+@interface NPRImageDownloader : NSObject <NSURLSessionDelegate>
 
 @property (nonatomic, weak) id<NPRImageDownloaderDelegate> delegate;
 
 @property (nonatomic, copy) id(^downloadViewControllerInitBlock)();
 
 + (instancetype)sharedDownloader;
-
 - (void)showDownloads;
-
 - (BOOL)queueImageURL:(NSURL *)URL thumbnail:(UIImage *)image;
-
 - (BOOL)queuePhoto:(Photo *)photo thumbnail:(UIImage *)image;
-
 - (NSInteger)numberOfDownloads;
-
 - (id)downloadOperationAtIndex:(NSInteger)index;
-
 - (BOOL)isDownloadingImageAtURL:(NSURL *)URL;
+- (BFTask *)downloadOriginalPhoto:(Photo *)photo;
+
 
 @end

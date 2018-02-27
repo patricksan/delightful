@@ -8,7 +8,7 @@
 
 #import "PhotoSharingManager.h"
 
-#import "PhotoBoxClient.h"
+#import "APIClient.h"
 
 #import "Photo+Additionals.h"
 
@@ -26,14 +26,16 @@
     return _sharedManager;
 }
 
-- (void)sharePhoto:(Photo *)photo image:(UIImage *)image tokenFetchedBlock:(void (^)(id token))tokenFetchedBlock completion:(void (^)())completion {
-    [[PhotoBoxClient sharedClient] fetchSharingTokenForPhotoWithId:photo.photoId completionBlock:^(NSString *token) {
+- (void)shareLinkPhoto:(Photo *)photo image:(UIImage *)image fromViewController:(UIViewController *)fromViewController tokenFetchedBlock:(void (^)(id token))tokenFetchedBlock completion:(void (^)(NSURL *URL))completion {
+    [[APIClient sharedClient] fetchSharingTokenForPhotoWithId:photo.photoId completionBlock:^(NSString *token) {
         if (tokenFetchedBlock) {
             tokenFetchedBlock(token);
         }
         if (token) {
             NSURL *sharedURL = [photo sharedURLWithToken:token];
-            [[[[[UIApplication sharedApplication] delegate] window] rootViewController] openActivityPickerForURL:sharedURL completion:completion];
+            if (completion) {
+                completion(sharedURL);
+            }
         } else {
             PBX_LOG(@"No token");
         }

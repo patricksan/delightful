@@ -20,15 +20,12 @@
 @property (nonatomic, copy, readonly) NSString *coverFilenameOriginal;
 @property (nonatomic, copy, readonly) NSString *coverId;
 @property (nonatomic, copy, readonly) NSURL *coverURL;
+@property (nonatomic, copy, readonly) NSNumber *dateLastPhotoAdded;
+
+@property (nonatomic, assign) NSInteger sectionNumber;
 
 @property (nonatomic, copy, readonly) Photo *albumCover;
 
 @property (nonatomic, strong) UIImage *albumThumbnailImage;
-
-+ (Album *)allPhotosAlbum;
-
-+ (Album *)favoritesAlbum;
-
-+ (Album *)downloadHistoryAlbum;
 
 @end

@@ -15,14 +15,11 @@
 #import "Album.h"
 #import "Tag.h"
 
-#import "UIViewController+DelightfulViewControllers.h"
-
-#import <JASidePanelController.h>
-
 #import "AppDelegate.h"
 
 #import <Social/Social.h>
 #import <objc/runtime.h>
+#import "TUSafariActivity.h"
 
 #define kLoadingViewTag 87261
 #define HAVE_SHOWN_NO_FACEBOOK @"HAVE_SHOWN_NO_FACEBOOK"
@@ -34,8 +31,8 @@ static char const * const isNavigationBarHidden = "isNavigationBarHidden";
 @implementation UIViewController (Additionals)
 
 - (void)showLoadingView:(BOOL)show atCenterY:(CGFloat)centerY {
-    if ([self isKindOfClass:[UICollectionViewController class]]) {
-        UICollectionViewController *cv = (UICollectionViewController *)self;
+    if ([self isKindOfClass:[PhotoBoxViewController class]]) {
+        PhotoBoxViewController *cv = (PhotoBoxViewController *)self;
         if (show) {
             UIActivityIndicatorView *activity = (UIActivityIndicatorView *)[cv.collectionView viewWithTag:kLoadingViewTag];
             if (!activity) {
@@ -72,7 +69,7 @@ static char const * const isNavigationBarHidden = "isNavigationBarHidden";
 }
 
 - (void)openActivityPickerForImage:(UIImage *)image {
-    void (^UIActivityViewControllerCompletionHandler)(NSString*, BOOL) = ^(NSString *activityType, BOOL completed){
+    void (^UIActivityViewControllerCompletionHandler)(NSString *activityType, BOOL completed, NSArray *returnedItems, NSError *activityError) = ^(NSString *activityType, BOOL completed, NSArray *returnedItems, NSError *activityError){
         if (completed) {
             if ([activityType isEqualToString:@"openin.activity"]) {
                 [self performSelector:@selector(showDocumentInteractionController:) withObject:image afterDelay:0.3];
@@ -87,15 +84,16 @@ static char const * const isNavigationBarHidden = "isNavigationBarHidden";
 }
 
 - (void)openActivityPickerForURL:(NSURL *)URL completion:(void (^)())completion {
-    [self openActivityPickerForItem:URL applicationActivities:nil completion:completion activityCompletionHandler:nil];
+    TUSafariActivity *activity = [[TUSafariActivity alloc] init];
+    [self openActivityPickerForItem:URL applicationActivities:@[activity] completion:completion activityCompletionHandler:nil];
 }
 
-- (void)openActivityPickerForItem:(id)item applicationActivities:(NSArray *)activities completion:(void(^)())completion activityCompletionHandler:(void(^)(NSString *, BOOL))activityCompletionHandler{
+- (void)openActivityPickerForItem:(id)item applicationActivities:(NSArray *)activities completion:(void(^)())completion activityCompletionHandler:(void(^)(NSString *activityType, BOOL completed, NSArray *returnedItems, NSError *activityError))activityCompletionHandler{
     
     UIActivityViewController *activityViewController = [[UIActivityViewController alloc] initWithActivityItems:@[item] applicationActivities:activities];
     [activityViewController setTitle:@"Share Photo's URL"];
-    [activityViewController setCompletionHandler:activityCompletionHandler];
-    [activityViewController setExcludedActivityTypes:@[UIActivityTypePrint, UIActivityTypeCopyToPasteboard, UIActivityTypeAssignToContact]];
+    [activityViewController setCompletionWithItemsHandler:activityCompletionHandler];
+    [activityViewController setExcludedActivityTypes:@[UIActivityTypePrint, UIActivityTypeAssignToContact]];
     [self presentViewController:activityViewController animated:YES completion:completion];
     
     if(![SLComposeViewController isAvailableForServiceType:SLServiceTypeFacebook]) {
@@ -144,14 +142,8 @@ static char const * const isNavigationBarHidden = "isNavigationBarHidden";
 }
 
 - (void)setNavigationBarHidden:(BOOL)hide animated:(BOOL)animated {
-    if (hide) {
-        PBX_LOG(@"Hiding navigation bar");
-    } else {
-        PBX_LOG(@"Showing navigaiton bar");
-    }
     if (animated) {
-        [[UIApplication sharedApplication] setStatusBarHidden:hide
-                                                withAnimation:UIStatusBarAnimationFade];
+        //[[UIApplication sharedApplication] setStatusBarHidden:hide withAnimation:UIStatusBarAnimationFade];
         
         //Fade navigation bar
         [UINavigationBar beginAnimations:nil context:nil];
@@ -163,7 +155,7 @@ static char const * const isNavigationBarHidden = "isNavigationBarHidden";
         
         objc_setAssociatedObject(self, isNavigationBarHidden, @(hide), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     } else {
-        [[UIApplication sharedApplication] setStatusBarHidden:hide];
+        //[[UIApplication sharedApplication] setStatusBarHidden:hide];
         self.navigationController.navigationBar.alpha = (hide)?0:1;
         self.navigationController.navigationBarHidden = NO;
     }
@@ -173,35 +165,14 @@ static char const * const isNavigationBarHidden = "isNavigationBarHidden";
     [self setNavigationBarHidden:YES animated:YES];
 }
 
-- (void)toggleNavigationBarHidden
+- (BOOL)toggleNavigationBarHidden
 {
     BOOL hide = !([objc_getAssociatedObject(self, isNavigationBarHidden) boolValue]);
     //Fade status bar
     [self setNavigationBarHidden:hide animated:YES];
+    
+    return hide;
 }
 
-- (void)loadPhotosInAlbum:(Album *)album {
-    PhotosViewController *photosViewController = [UIViewController mainPhotosViewController];
-    [photosViewController setItem:album];
-    [photosViewController setTitle:album.name];
-    [photosViewController setRelationshipKeyPathWithItem:@"albums"];
-    [photosViewController setResourceType:PhotoResource];
-    [photosViewController refreshIfNeeded];
-    
-    JASidePanelController *panelController = (JASidePanelController *)[[((AppDelegate *)[[UIApplication sharedApplication] delegate]) window] rootViewController];
-    [panelController toggleLeftPanel:nil];
-}
-
-- (void)loadPhotosInTag:(Tag *)tag {
-    PhotosViewController *photosViewController = [UIViewController mainPhotosViewController];
-    [photosViewController setItem:tag];
-    [photosViewController setTitle:[NSString stringWithFormat:@"#%@",tag.tagId]];
-    [photosViewController setRelationshipKeyPathWithItem:@"tags"];
-    [photosViewController setResourceType:PhotoWithTagsResource];
-    [photosViewController refreshIfNeeded];
-    
-    JASidePanelController *panelController = (JASidePanelController *)[[((AppDelegate *)[[UIApplication sharedApplication] delegate]) window] rootViewController];
-    [panelController toggleLeftPanel:nil];
-}
 
 @end

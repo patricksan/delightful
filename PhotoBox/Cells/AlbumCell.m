@@ -8,8 +8,9 @@
 
 #import "AlbumCell.h"
 #import "Album.h"
+#import "Photo.h"
 
-#import <UIView+AutoLayout.h>
+#import "PureLayout.h"
 
 @implementation AlbumCell
 
@@ -39,7 +40,11 @@
     
     Album *album = (Album *)item;
     NSURL *imageURL = [album coverURL];
-    [self.cellImageView setImageWithURL:imageURL placeholderImage:nil];
+    [self.cellImageView setImageWithURL:imageURL placeholderImage:nil completed:^(UIImage *image, NSError *error, SDImageCacheType cacheType) {
+        if (album) {
+            [album.albumCover setAsAlbumCoverImage:image];
+        }
+    }];
     [self.albumTitle setText:album.name];
 }
 

@@ -10,17 +10,18 @@
 
 #import "PhotoBoxCell.h"
 
+#import "NSDate+Escort.h"
+
+#import "DLFDatabaseManager.h"
+
+#import "Photo.h"
+
+
 @interface CollectionViewDataSource () {
     
 }
 
 @property (nonatomic, strong) id collectionView;
-
-@property (nonatomic, copy) NSMutableOrderedSet *uniqueItems;
-
-@property (nonatomic, copy) NSArray *shownItems;
-
-@property (nonatomic, copy) NSArray *internalFlattenedItems;
 
 @end
 
@@ -31,7 +32,6 @@
     if (self) {
         _collectionView = collectionView;
         ((UICollectionView *)_collectionView).dataSource = self;
-        _uniqueItems = [NSMutableOrderedSet orderedSet];
     }
     return self;
 }
@@ -39,11 +39,11 @@
 #pragma mark - Collection View Data Source
 
 - (NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)sectionIndex {
-    return [self.shownItems[sectionIndex] count];
+    return 0;
 }
 
 - (NSInteger)numberOfSectionsInCollectionView:(UICollectionView *)collectionView {
-    return self.shownItems.count;
+    return 0;
 }
 
 - (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath {
@@ -54,111 +54,54 @@
 }
 
 - (UICollectionReusableView *)collectionView:(UICollectionView *)collectionView viewForSupplementaryElementOfKind:(NSString *)kind atIndexPath:(NSIndexPath *)indexPath {
-    UICollectionReusableView *supplementaryView = (UICollectionReusableView *)[collectionView dequeueReusableSupplementaryViewOfKind:kind withReuseIdentifier:self.sectionHeaderIdentifier forIndexPath:indexPath];
-    if (self.configureCellHeaderBlock) {
-        NSArray *group = self.items[indexPath.section];
-        NSString *title = (self.groupKey)?[[group firstObject] valueForKey:self.groupKey]:nil;
-        self.configureCellHeaderBlock(supplementaryView, title, indexPath);
+    if ([kind isEqualToString:UICollectionElementKindSectionHeader]) {
+        UICollectionReusableView *supplementaryView = (UICollectionReusableView *)[collectionView dequeueReusableSupplementaryViewOfKind:kind withReuseIdentifier:self.sectionHeaderIdentifier forIndexPath:indexPath];
+        if (self.configureCellHeaderBlock) {
+            NSString *title = [self titleForSection:indexPath.section];
+            self.configureCellHeaderBlock(supplementaryView, title, indexPath);
+        }
+        return supplementaryView;
+    } else {
+        UICollectionReusableView *supplementaryView = (UICollectionReusableView *)[collectionView dequeueReusableSupplementaryViewOfKind:kind withReuseIdentifier:self.loadingFooterIdentifier forIndexPath:indexPath];
+        return supplementaryView;
     }
-    return supplementaryView;
+    return nil;
 }
 
 #pragma mark - Items
 
 - (NSInteger)numberOfItems {
-    NSInteger count = 0;
-    for (NSArray *array in self.shownItems) {
-        count += array.count;
-    }
-    return count;
+    return 0;
 }
 
 - (NSIndexPath *)indexPathOfItem:(id)item {
-    NSInteger groupIndex = 0;
-    for (NSArray *group in self.shownItems) {
-        NSInteger itemIndex = [group indexOfObject:item];
-        if (itemIndex != NSNotFound) {
-            return [NSIndexPath indexPathForItem:itemIndex inSection:groupIndex];
-        }
-        groupIndex++;
-    }
     return nil;
-}
-
-- (NSInteger)positionOfItem:(id)item {
-    NSInteger index = [self.internalFlattenedItems indexOfObject:item];
-    return index;
 }
 
 - (id)itemAtIndexPath:(NSIndexPath *)indexPath
 {
-    return self.shownItems[indexPath.section][indexPath.item];
+    return nil;
 }
+
+- (void)addItem:(id)item {
+    [self addItems:@[item]];
+}
+
 
 - (void)addItems:(NSArray *)items {
-    [self.uniqueItems addObjectsFromArray:items];
     
-    self.shownItems = [self processedItems];
-    
-    [self.collectionView reloadData];
-    
-    PBX_LOG(@"Number of items %d", self.flattenedItems.count);
 }
 
-- (NSArray *)items {
-    return self.shownItems;
+- (NSInteger)positionOfItemInIndexPath:(NSIndexPath *)indexPath {
+    return 0;
 }
 
-- (NSArray *)flattenedItems {
-    return self.internalFlattenedItems;
+- (void)enumerateKeysAndObjectsInSection:(NSInteger)section usingBlock:(void (^)(NSString *, NSString *, id, NSUInteger, BOOL *))block {
+    
 }
 
-- (void)removeAllItems {
-    self.shownItems = [NSArray array];
-    [self.uniqueItems removeAllObjects];
-}
-
-- (NSArray *)processedItems {
-    NSArray *processed = self.uniqueItems.array;
-    if (self.predicate) {
-        processed = [processed filteredArrayUsingPredicate:self.predicate];
-    }
-    
-    BOOL groupKeyAscending = NO;
-    if (self.sortDescriptors) {
-        processed = [processed sortedArrayUsingDescriptors:self.sortDescriptors];
-        if (self.groupKey) {
-            NSSortDescriptor *sortDescriptor = [[self.sortDescriptors filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"key = %@", self.groupKey]] firstObject];
-            if (sortDescriptor) {
-                groupKeyAscending = sortDescriptor.ascending;
-            }
-        }
-    }
-    
-    if (self.groupKey) {
-        NSArray *groups = [processed valueForKeyPath:[NSString stringWithFormat:@"@distinctUnionOfObjects.%@", self.groupKey]];
-        groups = [groups sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"self" ascending:groupKeyAscending]]];
-        NSMutableArray *groupedArray = [NSMutableArray array];
-        for (NSString *groupString in groups) {
-            NSArray *group = [processed filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"%K = %@", self.groupKey, groupString]];
-            if (group) {
-                [groupedArray addObject:group];
-            }
-        }
-        processed = groupedArray;
-    } else {
-        processed = [NSArray arrayWithObject:processed];
-    }
-    
-    NSMutableArray *flat = [NSMutableArray array];
-    for (id section in processed) {
-        for (id item in section) {
-            [flat addObject:item];
-        }
-    }
-    self.internalFlattenedItems = flat;
-    
-    return processed;
+- (NSString *)titleForSection:(NSInteger)section {
+    return nil;
 }
 
 @end

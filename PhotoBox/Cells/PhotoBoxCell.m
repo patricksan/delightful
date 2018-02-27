@@ -8,7 +8,7 @@
 
 #import "PhotoBoxCell.h"
 
-#import <UIView+AutoLayout.h>
+#import "PureLayout.h"
 
 @implementation PhotoBoxCell
 
@@ -19,12 +19,6 @@
         [self setup];
     }
     return self;
-}
-
-- (void)awakeFromNib {
-    [super awakeFromNib];
-    
-    [self setup];
 }
 
 - (void)setup {

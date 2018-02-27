@@ -7,20 +7,22 @@
 //
 
 #import "PhotoBoxViewController.h"
-
 #import "ConnectionManager.h"
-
 #import "PhotoBoxCell.h"
 #import "PhotoBoxModel.h"
 #import "Photo.h"
 #import "Album.h"
 #import "Tag.h"
-
 #import "UIViewController+Additionals.h"
 #import "UIScrollView+Additionals.h"
 #import "NSArray+Additionals.h"
+#import "StickyHeaderFlowLayout.h"
+#import "NSAttributedString+DelighftulFonts.h"
+#import "LoadingNavigationItemTitleView.h"
+#import "DLFDatabaseManager.h"
+#import "SyncEngine.h"
 
-#import <NSDate+Escort.h>
+#import "PureLayout.h"
 
 #define INITIAL_PAGE_NUMBER 1
 
@@ -28,42 +30,71 @@
 
 NSString *const galleryContainerType = @"gallery";
 
+
 @interface PhotoBoxViewController () <UICollectionViewDelegateFlowLayout, UIAlertViewDelegate> {
     CGFloat lastOffset;
     BOOL isObservingLoggedInUser;
 }
 
 @property (nonatomic, assign, getter = isShowingAlert) BOOL showingAlert;
-@property (nonatomic, strong) UIActivityIndicatorView *loadingView;
+@property (nonatomic, assign) CGSize currentSize;
+@property (nonatomic, assign) BOOL _showRightBarButtonItem;
+@property (nonatomic, strong) NSValue *contentSize;
+@property (nonatomic, strong) UIActivityIndicatorView *bottomLoadingView;
 
 @end
 
 @implementation PhotoBoxViewController
 
-@synthesize pageSize = _pageSize;
-
 - (void)viewDidLoad
 {
     [super viewDidLoad];
     
-    self.page = INITIAL_PAGE_NUMBER;
-    self.numberOfColumns = 2;
-    _pageSize = BATCH_SIZE;
+    [self showEmptyLoading:YES];
+    
+    [self.collectionView addObserver:self forKeyPath:NSStringFromSelector(@selector(contentSize)) options:NSKeyValueObservingOptionInitial|NSKeyValueObservingOptionNew context:NULL];
+    
+    self.currentSize = self.view.frame.size;
+    
+    [self.dataSource setDebugName:NSStringFromClass([self class])];
     
     [self setAutomaticallyAdjustsScrollViewInsets:NO];
     
     [self setupConnectionManager];
     [self setupCollectionView];
     [self setupRefreshControl];
-    [self setupPinchGesture];
     [self setupNavigationItemTitle];
     
-    if (!self.disableFetchOnLoad) {
-        PBX_LOG(@"Gonna fetch resource in view did load");
-        [self refreshIfNeeded];
-    }
+    [self.collectionView reloadData];
     
     [self restoreContentInset];
+    
+    [self setRegisterSyncingNotification:YES];
+}
+
+- (void)setRegisterSyncingNotification:(BOOL)registerSyncingNotification {
+    if (_registerSyncingNotification != registerSyncingNotification) {
+        _registerSyncingNotification = registerSyncingNotification;
+        
+        if (registerSyncingNotification) {
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(willStartSyncingNotification:) name:SyncEngineWillStartFetchingNotification object:nil];
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(didFinishSyncingNotification:) name:SyncEngineDidFinishFetchingNotification object:nil];
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(didFailSyncingNotification:) name:SyncEngineDidFailFetchingNotification object:nil];
+        } else {
+            [[NSNotificationCenter defaultCenter] removeObserver:self name:SyncEngineWillStartFetchingNotification object:nil];
+            [[NSNotificationCenter defaultCenter] removeObserver:self name:SyncEngineDidFinishFetchingNotification object:nil];
+            [[NSNotificationCenter defaultCenter] removeObserver:self name:SyncEngineDidFailFetchingNotification object:nil];
+        }
+    }
+    
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [self setRegisterSyncingNotification:NO];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [self setRegisterSyncingNotification:YES];
 }
 
 - (void)didReceiveMemoryWarning
@@ -73,24 +104,160 @@ NSString *const galleryContainerType = @"gallery";
 }
 
 - (void)dealloc {
+    [self.collectionView removeObserver:self forKeyPath:NSStringFromSelector(@selector(contentSize))];
     if (isObservingLoggedInUser) {
         [[ConnectionManager sharedManager] removeObserver:self forKeyPath:NSStringFromSelector(@selector(isUserLoggedIn))];
         [[ConnectionManager sharedManager] removeObserver:self forKeyPath:NSStringFromSelector(@selector(isShowingLoginPage))];
     }
 }
 
+- (void)restoreContentInset {
+    
+}
+
+- (void)showEmptyLoading:(BOOL)show {
+    [self showEmptyLoading:show withText:nil];
+}
+
+- (void)showEmptyLoading:(BOOL)show withText:(id)text {
+    if (show) {
+        UIView *view = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.collectionView.frame.size.width, self.collectionView.frame.size.height)];
+        [self.collectionView setBackgroundView:view];
+        [view setBackgroundColor:[UIColor whiteColor]];
+        
+        UIActivityIndicatorView *indicator = (UIActivityIndicatorView *)[view viewWithTag:20000];
+        if (!indicator) {
+            indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+            [indicator setCenter:CGPointMake(CGRectGetWidth(view.frame)/2, CGRectGetHeight(view.frame)/2)];
+            [indicator setTag:20000];
+            [view addSubview:indicator];
+            [indicator startAnimating];
+            [indicator setTranslatesAutoresizingMaskIntoConstraints:NO];
+            [indicator autoCenterInSuperview];
+        }
+        
+        if (text) {
+            UILabel *textLabel = (UILabel *)[view viewWithTag:10000];
+            if (!textLabel) {
+                textLabel = [[UILabel alloc] initForAutoLayout];
+                [textLabel setNumberOfLines:0];
+                [textLabel setTag:10000];
+                [view addSubview:textLabel];
+                [textLabel autoPinEdge:ALEdgeLeft toEdge:ALEdgeLeft ofView:view withOffset:20];
+                [textLabel autoPinEdge:ALEdgeRight toEdge:ALEdgeRight ofView:view withOffset:-20];
+                [textLabel autoPinEdge:ALEdgeTop toEdge:ALEdgeBottom ofView:indicator withOffset:10];
+            }
+            
+            if ([text isKindOfClass:[NSAttributedString class]]) {
+                [textLabel setAttributedText:text];
+            } else {
+                [textLabel setText:text];
+                [textLabel setTextColor:[UIColor lightGrayColor]];
+                [textLabel setFont:[UIFont systemFontOfSize:12]];
+                [textLabel setTextAlignment:NSTextAlignmentCenter];
+            }
+            [textLabel sizeToFit];
+        } else {
+            UILabel *textLabel = (UILabel *)[view viewWithTag:10000];
+            if (textLabel) {
+                [textLabel setText:nil];
+            }
+        }
+    } else {
+        [self.collectionView setBackgroundView:nil];
+        //[self.collectionView setAlwaysBounceVertical:YES];
+    }
+}
+
+- (void)showNoItems:(BOOL)show {
+    if (show) {
+        UIView *view = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.collectionView.frame.size.width, self.collectionView.frame.size.height)];
+        [self.collectionView setBackgroundView:view];
+        [view setBackgroundColor:[UIColor whiteColor]];
+        
+        UILabel *textLabel = (UILabel *)[view viewWithTag:10000];
+        if (!textLabel) {
+            textLabel = [[UILabel alloc] initForAutoLayout];
+            [textLabel setNumberOfLines:0];
+            [textLabel setTag:10000];
+            [view addSubview:textLabel];
+            [textLabel autoPinEdge:ALEdgeLeft toEdge:ALEdgeLeft ofView:view withOffset:20];
+            [textLabel autoPinEdge:ALEdgeRight toEdge:ALEdgeRight ofView:view withOffset:-20];
+            [textLabel autoCenterInSuperview];
+        }
+        
+        [textLabel setText:NSLocalizedString(@"No Photos", nil)];
+        [textLabel setTextAlignment:NSTextAlignmentCenter];
+        [textLabel setFont:[UIFont systemFontOfSize:12]];
+        [textLabel setTextColor:[UIColor lightGrayColor]];
+    } else {
+        [self.collectionView setBackgroundView:nil];
+    }
+}
+
+
+- (void)showRightBarButtonItem:(BOOL)show {
+    if (__showRightBarButtonItem != show) {
+        __showRightBarButtonItem = show;
+        if (show) {
+            if (!self.navigationItem.rightBarButtonItem) {
+                UIBarButtonItem *leftItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"sort"] style:UIBarButtonItemStylePlain target:self action:@selector(didTapSortButton:)];
+                [self.navigationItem setRightBarButtonItem:leftItem];
+            }
+        } else {
+            [self.navigationItem setRightBarButtonItem:nil];
+        }
+    }
+}
+
+- (void)didTapSortButton:(id)sender {
+}
+
 #pragma mark - Orientation
 
-- (NSUInteger)supportedInterfaceOrientations {
-    return UIInterfaceOrientationMaskPortrait;
-}
-
-- (UIInterfaceOrientation)preferredInterfaceOrientationForPresentation {
-    return UIInterfaceOrientationPortrait;
-}
-
-- (BOOL)shouldAutorotate {
-    return NO;
+- (void)dlf_viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
+    CLS_LOG(@"**** will transition to size %@ in %@", NSStringFromCGSize(size), self.class);
+    
+    if ([self.collectionView.collectionViewLayout respondsToSelector:@selector(targetIndexPath)]) {
+        self.currentSize = size;
+        
+        NSIndexPath *indexPath;
+        NSArray *visibleCell = [self.collectionView visibleCells];
+        CGFloat minimumVisibleY = self.collectionView.contentOffset.y + self.collectionView.contentInset.top;
+        for (UICollectionViewCell *cell in visibleCell) {
+            if (cell.frame.origin.y > minimumVisibleY) {
+                if (!indexPath) {
+                    indexPath = [self.collectionView indexPathForCell:cell];
+                } else {
+                    NSIndexPath *thisIndexPath = [self.collectionView indexPathForCell:cell];
+                    NSComparisonResult result = [thisIndexPath compare:indexPath];
+                    if (result == NSOrderedAscending) {
+                        indexPath = thisIndexPath;
+                    }
+                }
+            }
+        }
+        
+        if (self.selectedCell) {
+            [((id)self.collectionView.collectionViewLayout) setTargetIndexPath:[self.collectionView indexPathForCell:self.selectedCell]];
+        } else {
+            [((id)self.collectionView.collectionViewLayout) setTargetIndexPath:(indexPath)?indexPath:[self.collectionView indexPathForCell:[[self.collectionView visibleCells] firstObject]]];
+        }
+    }
+    
+    BOOL needToRestoreOffset = NO;
+    if (self.collectionView.contentOffset.y == -self.collectionView.contentInset.top) {
+        needToRestoreOffset = YES;
+    }
+    [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        [self restoreContentInsetForSize:size];
+        [self.collectionView.collectionViewLayout invalidateLayout];
+        if (needToRestoreOffset) {
+            self.collectionView.contentOffset = CGPointMake(0, -self.collectionView.contentInset.top);
+        }
+    } completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        
+    }];
 }
 
 #pragma mark - Setup
@@ -116,14 +283,9 @@ NSString *const galleryContainerType = @"gallery";
 
 - (void)setupCollectionView {
     [self.collectionView setDelegate:self];
-    [self.collectionView setContentInset:UIEdgeInsetsMake(CGRectGetMaxY(self.navigationController.navigationBar.frame), 0, 0, 0)];
+    [self.collectionView setContentInset:UIEdgeInsetsMake(self.topLayoutGuide.length, 0, 0, 0)];
     [self.collectionView setBackgroundColor:[UIColor whiteColor]];
     [self.collectionView setAlwaysBounceVertical:YES];
-}
-
-- (void)setupPinchGesture {
-    UIPinchGestureRecognizer *pinch = [[UIPinchGestureRecognizer alloc] initWithTarget:self action:@selector(collectionViewPinched:)];
-    [self.collectionView addGestureRecognizer:pinch];
 }
 
 - (void)setupRefreshControl {
@@ -155,12 +317,8 @@ NSString *const galleryContainerType = @"gallery";
         [self setupDataSourceConfigureBlock];
         [_dataSource setCellIdentifier:self.cellIdentifier];
         [_dataSource setSectionHeaderIdentifier:[self sectionHeaderIdentifier]];
+        [_dataSource setLoadingFooterIdentifier:[self footerIdentifier]];
         [_dataSource setConfigureCellHeaderBlock:[self headerCellConfigureBlock]];
-        [_dataSource setPredicate:[self predicate]];
-        [_dataSource setGroupKey:[self groupKey]];
-        [_dataSource setSortDescriptors:[self sortDescriptors]];
-        
-        [_dataSource setDebugName:NSStringFromClass([self class])];
     }
     return _dataSource;
 }
@@ -180,39 +338,51 @@ NSString *const galleryContainerType = @"gallery";
     return nil;
 }
 
-- (NSString *)displayedItemIdKey {
-    NSString *itemClassName = [NSStringFromClass([self resourceClass]) lowercaseString];
-    return [NSString stringWithFormat:@"%@Id", itemClassName];
-}
-
-- (NSArray *)items {
-    return self.dataSource.items;
-}
-
-- (UIActivityIndicatorView *)loadingView {
-    if (!_loadingView) {
-        _loadingView = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
-        [_loadingView setHidesWhenStopped:YES];
-    }
-    return _loadingView;
-}
-
-- (NSString *)fetchedInIdentifier {
-    if ([self isGallery]) {
-        return galleryContainerType;
-    }
-    return [[self relationshipKeyPathWithItem] stringByAppendingFormat:@"-%@", [self.item itemId]];
-}
-
-- (NSString *)groupKey {
-    return nil;
-}
-
-- (NSPredicate *)predicate {
-    return nil;
+- (UICollectionViewCell *)selectedCell {
+    NSIndexPath *indexPath = [self.dataSource indexPathOfItem:self.selectedItem];
+    UICollectionViewCell *cell = [self.collectionView cellForItemAtIndexPath:indexPath];
+    return cell;
 }
 
 #pragma mark - Setter
+
+- (void)setIsFetching:(BOOL)isFetching {
+    if (_isFetching != isFetching) {
+        _isFetching = isFetching;
+        if (!isFetching) {
+            [self.collectionView reloadData];
+            self.navigationItem.titleView = nil;
+        } else {
+            LoadingNavigationItemTitleView *loadingItemTitleView = (LoadingNavigationItemTitleView *)self.navigationItem.titleView;
+            if (!loadingItemTitleView || ![loadingItemTitleView isKindOfClass:[LoadingNavigationItemTitleView class]]) {
+                loadingItemTitleView = [[LoadingNavigationItemTitleView alloc] initWithFrame:CGRectMake(0, 0, CGFLOAT_MAX, CGFLOAT_MAX)];
+                [loadingItemTitleView.titleLabel setText:self.title];
+                [loadingItemTitleView.titleLabel setFont:[UIFont boldSystemFontOfSize:17]];
+                CGSize size = [loadingItemTitleView systemLayoutSizeFittingSize:UILayoutFittingCompressedSize];
+                loadingItemTitleView.frame = (CGRect){loadingItemTitleView.frame.origin, size};
+                loadingItemTitleView.center = CGPointMake(self.navigationController.navigationBar.frame.size.width/2, self.navigationController.navigationBar.frame.size.height/2);
+                [self.navigationItem setTitleView:loadingItemTitleView];
+            }
+            if (!loadingItemTitleView.indicatorView.isAnimating) {
+                [loadingItemTitleView.indicatorView startAnimating];
+            }
+        }
+        if ([self.collectionView.collectionViewLayout isKindOfClass:[StickyHeaderFlowLayout class]]) {
+            [((StickyHeaderFlowLayout *)self.collectionView.collectionViewLayout) setShowLoadingView:isFetching];
+        }
+    }
+    
+    if (isFetching) {
+        if (!self.bottomLoadingView) {
+            self.bottomLoadingView = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+        }
+        self.bottomLoadingView.center = CGPointMake(CGRectGetWidth(self.collectionView.frame)/2, self.collectionView.contentSize.height - CGRectGetHeight(self.bottomLoadingView.frame)/2 - 10);
+        [self.collectionView insertSubview:self.bottomLoadingView atIndex:0];
+        if (![self.bottomLoadingView isAnimating]) [self.bottomLoadingView startAnimating];
+    } else {
+        [self.bottomLoadingView removeFromSuperview];
+    }
+}
 
 - (void)setAttributedTitle:(NSAttributedString *)title {
     super.title = title.string;
@@ -238,151 +408,15 @@ NSString *const galleryContainerType = @"gallery";
     [self setTitle:title subtitle:nil];
 }
 
-#pragma mark - Connection
-
-- (void)fetchResource {
-    [self showLoadingView:YES];
-    PBX_LOG(@"Fetching resource: %@", NSStringFromClass(self.resourceClass));
-    [[PhotoBoxClient sharedClient] getResource:self.resourceType
-                                        action:ListAction
-                                    resourceId:self.resourceId
-                                     fetchedIn:[self fetchedInIdentifier]
-                                          page:self.page
-                                      pageSize:self.pageSize mainContext:nil
-                                       success:^(id objects) {
-                                           [self showLoadingView:NO];
-                                           if (objects) {
-                                               if (self.refreshControl.isRefreshing) {
-                                                   self.collectionView.contentInset = ({
-                                                       UIEdgeInsets inset = self.collectionView.contentInset;
-                                                       inset.top += self.refreshControl.frame.size.height;
-                                                       inset;
-                                                   });
-                                                   [self.refreshControl endRefreshing];
-                                                   [self restoreContentInset];
-                                                   
-                                               }
-                                               PBX_LOG(@"Received %lu %@. Total shown = %ld", (unsigned long)((NSArray *)objects).count, NSStringFromClass(self.resourceClass), (long)[self.dataSource numberOfItems]);
-                                               [self processPaginationFromObjects:objects];
-                                               
-                                               self.isFetching = NO;
-                                               
-                                               [self.dataSource addItems:objects];
-                                               
-                                               [self didFetchItems];
-                                                                                              
-                                               NSInteger count = [self.dataSource numberOfItems];
-                                               if (count==self.totalItems) {
-                                                   [self performSelector:@selector(restoreContentInset) withObject:nil afterDelay:0.3];
-                                               }
-                                           }
-                                           
-                                       } failure:^(NSError *error) {
-                                           PBX_LOG(@"Error: %@", error);
-                                           [self showError:error];
-                                           [self showLoadingView:NO];
-                                       }];
-}
-
-- (void)fetchMore {
-    if (!self.isFetching) {
-        NSInteger count = [self.dataSource numberOfItems];
-        if (count!=0) {
-            if (self.page!=self.totalPages) {
-                self.isFetching = YES;
-                self.page = ([self.dataSource numberOfItems]/self.pageSize)+1;
-                PBX_LOG(@"Fetch more");
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self showLoadingView:YES];
-                });
-                [self performSelector:@selector(fetchResource) withObject:nil afterDelay:0.5];
-            }
-        }
-    }
-}
-
-- (void)processPaginationFromObjects:(id)objects {
-    NSArray *filtered = [objects filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"totalRows > 0"]];
-    if (filtered.count == 1) {
-        PhotoBoxModel *firstObject = (PhotoBoxModel *)[filtered firstObject];
-        self.totalItems = [firstObject.totalRows intValue];
-        self.totalPages = [firstObject.totalPages intValue];
-        self.currentPage = [firstObject.currentPage intValue];
-        self.currentRow = [firstObject.currentRow intValue];
-    } else {
-        self.totalItems = ((NSArray *)objects).count;
-        self.totalPages = 1;
-        self.currentPage = 1;
-        self.currentRow = 0;
-    }
-}
-
-- (void)restoreContentInset {
-    PBX_LOG(@"");
-    [self.collectionView setContentInset:UIEdgeInsetsMake(64, 0, 0, 0)];
+- (void)restoreContentInsetForSize:(CGSize)size {
+    [self.collectionView setContentInset:UIEdgeInsetsMake(CGRectGetMaxY(self.navigationController.navigationBar.frame), 0, 0, 0)];
     self.collectionView.scrollIndicatorInsets = self.collectionView.contentInset;
 }
 
-- (void)didFetchItems {
-    
-}
-
 - (void)refresh {
-    PBX_LOG(@"Refresh %@", NSStringFromClass(self.resourceClass));
-    self.isFetching = YES;
-    self.page = INITIAL_PAGE_NUMBER;
-    [self.dataSource removeAllItems];
-    [self.collectionView reloadData];
-    [self fetchResource];
-}
-
-- (void)refreshIfNeeded {
-    [self refresh];
-}
-
-- (NSString *)refreshKey {
-    return nil;
-}
-
-- (NSArray *)cachedItems {
-    return nil;
-}
-
-- (void)willLoadDataFromCache {
-    
-}
-
-- (void)didLoadDataFromCache {
-    
-}
-
-- (void)showLoadingView:(BOOL)show {
-    if (self.page==INITIAL_PAGE_NUMBER) {
-        if (show) {
-            if (!self.navigationItem.rightBarButtonItem) {
-                UIBarButtonItem *loadingItem = [[UIBarButtonItem alloc] initWithCustomView:self.loadingView];
-                [self.navigationItem setRightBarButtonItem:loadingItem];
-            }
-            [self.loadingView startAnimating];
-            PBX_LOG(@"Showing right loading view");
-        } else {
-            [self.loadingView stopAnimating];
-            PBX_LOG(@"Stopping right loading view");
-            if ([self.refreshControl isRefreshing]) {
-                [self.refreshControl endRefreshing];
-                PBX_LOG(@"End refresh control");
-            }
-        }
-        [self showLoadingView:show atBottomOfScrollView:YES];
-        PBX_LOG(@"Showing bottom loading view");
-    } else {
-        [self showLoadingView:show atBottomOfScrollView:YES];
-        PBX_LOG(@"Closing bottom loading view");
-    }
 }
 
 -(void)showError:(NSError *)error {
-    self.isFetching = NO;
     if (!self.showingAlert) {
         self.showingAlert = YES;
         PBX_LOG(@"Showing error: %@", error);
@@ -401,121 +435,11 @@ NSString *const galleryContainerType = @"gallery";
     self.showingAlert = NO;
 }
 
-#pragma mark - Scroll View
 
-- (void)scrollViewDidScroll:(UIScrollView *)scrollView {
-    BOOL isScrollDown = NO;
-    if (lastOffset < scrollView.contentOffset.y) {
-        isScrollDown = YES;
-    }
-    lastOffset = scrollView.contentOffset.y;
-    if ([scrollView hasReachedBottom] && !self.isFetching && isScrollDown) {
-        [self fetchMore];
-    }
-}
 
-#pragma mark - Gesture
-
-- (void)collectionViewPinched:(UIPinchGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateEnded) {
-        if (gesture.scale > 1) {
-            [self changeNumberOfColumnsWithPinch:PinchOut];
-        } else {
-            [self changeNumberOfColumnsWithPinch:PinchIn];
-        }
-    }
-    PBX_LOG(@"Pinched %@. Number of columns = %d", NSStringFromClass(self.resourceClass), self.numberOfColumns);
-}
-
-- (void)changeNumberOfColumnsWithPinch:(PinchDirection)direction {
-    PBX_LOG(@"");
-    NSArray *visibleItems = [self.collectionView visibleCells];
-    UICollectionViewCell *cell = visibleItems[0];
-    NSIndexPath *indexPath = [self.collectionView indexPathForCell:cell];
-    int numCol = self.numberOfColumns;
-    switch (direction) {
-        case PinchIn:{
-            self.numberOfColumns++;
-            self.numberOfColumns = MIN(self.numberOfColumns, 10);
-            break;
-        }
-        case PinchOut:{
-            self.numberOfColumns--;
-            if (self.numberOfColumns==0) {
-                self.numberOfColumns = 1;
-            }
-            break;
-        }
-        default:
-            break;
-    }
-    if (numCol != self.numberOfColumns) {
-        if (self.numberOfColumns == 1) {
-            [self.collectionView.collectionViewLayout invalidateLayout];
-        }
-        [self.collectionView performBatchUpdates:^{
-            
-        } completion:^(BOOL finished) {
-            [self didChangeNumberOfColumns];
-            [self restoreContentInset];
-            [self.collectionView scrollToItemAtIndexPath:indexPath atScrollPosition:UICollectionViewScrollPositionCenteredVertically animated:YES];
-        }];
-    }
-}
 
 - (void)didChangeNumberOfColumns {
     
-}
-
-#pragma mark - Photos page stuff
-
-- (BOOL)isGallery {
-    return ([self.item.itemId isEqualToString:PBX_allAlbumIdentifier])?YES:NO;
-}
-
-- (NSArray *)sortDescriptors {
-    NSMutableArray *sorts = [NSMutableArray array];
-    
-    if ([self isGallery]) {
-        NSSortDescriptor *uploadedSort = [NSSortDescriptor sortDescriptorWithKey:NSStringFromSelector(@selector(dateUploaded)) ascending:NO];
-        [sorts addObject:uploadedSort];
-    }
-    
-    NSSortDescriptor *dateTakenStringSort = [NSSortDescriptor sortDescriptorWithKey:NSStringFromSelector(@selector(dateTakenString)) ascending:NO];
-    [sorts addObject:dateTakenStringSort];
-    
-    NSSortDescriptor *dateTakenSort = [NSSortDescriptor sortDescriptorWithKey:NSStringFromSelector(@selector(dateTaken)) ascending:YES];
-    [sorts addObject:dateTakenSort];
-    
-    return sorts;
-}
-
-#pragma mark - UICollectionViewFlowLayoutDelegate
-
-- (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout referenceSizeForHeaderInSection:(NSInteger)section {
-    if (self.numberOfColumns <= 1) {
-        return CGSizeZero;
-    }
-    return CGSizeMake(CGRectGetWidth(self.collectionView.frame), 44);
-}
-
-- (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout sizeForItemAtIndexPath:(NSIndexPath *)indexPath {
-    CGFloat collectionViewWidth = CGRectGetWidth(self.collectionView.frame);
-    CGFloat width = floorf((collectionViewWidth/(float)self.numberOfColumns));
-    return CGSizeMake(width, width);
-}
-
-- (CGFloat)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout minimumLineSpacingForSectionAtIndex:(NSInteger)section {
-    if ((int)CGRectGetWidth(self.collectionView.frame)%self.numberOfColumns == 0 && self.numberOfColumns != 1) {
-        return 0;
-    } else if (self.numberOfColumns == 1) {
-        return 5;
-    }
-    return 1;
-}
-
-- (CGFloat)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout minimumInteritemSpacingForSectionAtIndex:(NSInteger)section {
-    return 0;
 }
 
 #pragma mark - KVO
@@ -526,19 +450,78 @@ NSString *const galleryContainerType = @"gallery";
             BOOL userLoggedIn = [[ConnectionManager sharedManager] isUserLoggedIn];
             if (userLoggedIn) {
                 PBX_LOG(@"Gonna fetch resource in KVO");
-                [self fetchResource];
+                [self showSyncingLoadingMessageIfNeeded];
             } else {
-                NSLog(@"Logging out, clearing everything");
-                [self.dataSource removeAllItems];
-                self.page = INITIAL_PAGE_NUMBER;
+                CLS_LOG(@"Logging out, clearing everything");
+                [[DLFDatabaseManager manager] removeAllItems];
                 [self.collectionView reloadData];
                 [self userDidLogout];
             }
         } else if ([keyPath isEqualToString:NSStringFromSelector(@selector(isShowingLoginPage))]) {
             if ([[ConnectionManager sharedManager] isShowingLoginPage]) {
-                self.isFetching = NO;
             }
         }
+    } else if ([keyPath isEqualToString:NSStringFromSelector(@selector(contentSize))]) {
+        if (!CGSizeEqualToSize(self.contentSize.CGSizeValue, [change[@"new"] CGSizeValue])) {
+            self.contentSize = change[@"new"];
+            
+            if ([self.dataSource numberOfItems] > 0) {
+                [self showEmptyLoading:NO];
+                [self showRightBarButtonItem:YES];
+            } else {
+                if (![self showSyncingLoadingMessageIfNeeded]) {
+                    [self showEmptyLoading:YES];
+                }
+                [self showRightBarButtonItem:NO];
+                if (self.isDoneSyncing) {
+                    [self showEmptyLoading:NO];
+                    [self showNoItems:YES];
+                }
+                
+            }
+        }
+    }
+}
+
+#pragma mark - Sync Engine Notification
+
+- (BOOL)showSyncingLoadingMessageIfNeeded {
+    return NO;
+}
+
+- (void)willStartSyncingNotification:(NSNotification *)notification {
+    NSDictionary *userInfo = notification.userInfo;
+    NSString *resource = userInfo[SyncEngineNotificationResourceKey];
+    NSString *item = userInfo[SyncEngineNotificationIdentifierKey];
+    if ([item isKindOfClass:[NSNull class]]) {
+        item = nil;
+    }
+    if ([resource isEqualToString:NSStringFromClass([self resourceClass])] && !item) {
+        [self setIsFetching:YES];
+    }
+}
+
+- (void)didFinishSyncingNotification:(NSNotification *)notification {
+    NSDictionary *userInfo = notification.userInfo;
+    NSString *resource = userInfo[SyncEngineNotificationResourceKey];
+    NSString *item = userInfo[SyncEngineNotificationIdentifierKey];
+    if ([item isKindOfClass:[NSNull class]]) {
+        item = nil;
+    }
+    if ([resource isEqualToString:NSStringFromClass([self resourceClass])] && !item) {
+        NSNumber *count = userInfo[SyncEngineNotificationCountKey];
+        if (count.intValue == 0) {
+            [self setIsFetching:NO];
+        }
+    }
+}
+
+- (void)didFailSyncingNotification:(NSNotification *)notification {
+    NSDictionary *userInfo = notification.userInfo;
+    NSString *resource = userInfo[SyncEngineNotificationResourceKey];
+    NSString *item = userInfo[SyncEngineNotificationIdentifierKey];
+    if ([resource isEqualToString:NSStringFromClass([self resourceClass])] && !item) {
+        [self setIsFetching:NO];
     }
 }
 

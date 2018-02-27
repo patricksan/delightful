@@ -3,12 +3,12 @@
 //  Delightful
 //
 //  Created by Nico Prananta on 5/11/14.
-//  Copyright (c) 2014 Touches. All rights reserved.
+//  Copyright (c) 2014-2016 DelightfulDev. All rights reserved.
 //
 
 #import "LeftPanelHeaderView.h"
 
-#import <UIView+Autolayout.h>
+#import "PureLayout.h"
 
 @interface LeftPanelHeaderView ()
 
@@ -81,6 +81,14 @@
     [path moveToPoint:CGPointMake(CGRectGetMinX(self.downloadedButton.frame), yPoint)];
     [path addLineToPoint:CGPointMake(CGRectGetMaxX(self.downloadedButton.frame), yPoint)];
     [self.separatorLine2 setPath:path.CGPath];
+}
+
+-(BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    for (UIView *view in self.subviews) {
+        if (!view.hidden && view.alpha > 0 && view.userInteractionEnabled && [view pointInside:[self convertPoint:point toView:view] withEvent:event])
+            return YES;
+    }
+    return NO;
 }
 
 @end

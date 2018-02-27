@@ -1,25 +1,40 @@
-platform :ios, '7.0'
+# Uncomment this line to define a global platform for your project
+# platform :ios, '9.0'
 
-inhibit_all_warnings!
+target 'Delightful' do
+  # Uncomment this line if you're using Swift or would like to use dynamic frameworks
+  use_frameworks!
 
-pod 'UIColor+MLPFlatColors', '~> 1.0'
-pod 'NSDate+TimeAgo'
-pod 'NSDate-Escort'
-pod 'UIView+AutoLayout'
-pod 'iOS-blur'
-pod 'AFOAuth1Client'
-pod 'Mantle'
-pod 'Overcoat', '1.1'
-pod 'SDWebImage' , '3.5'
-pod 'UIImageViewModeScaleAspect'
-pod 'MYBlurIntroductionView', '~> 1.0.0'
-pod 'GPUImage'
-pod 'JASidePanels'
-pod 'SVProgressHUD'
-pod 'QMBParallaxScrollViewController'
-target :DelightfulTests, :exclusive => true do
-    pod 'OCMock', '~> 2.2.1'
-    pod 'Expecta', '~> 0.2.3'
+  # Pods for Delightful
+  pod 'NSDate+TimeAgo'
+  pod 'NSDate-Escort'
+  pod 'PureLayout'
+  pod 'AFNetworking', '~> 3.0'
+  pod 'Mantle'
+  pod 'TDOAuth'
+  pod 'SDWebImage'
+  pod 'UIImageViewModeScaleAspect'
+  pod 'GPUImage'
+  pod 'SVProgressHUD'
+  pod 'TUSafariActivity'
+  pod 'TMCache'
+  pod 'UIColor-Crayola'
+  pod 'MBProgressHUD'
+  pod 'DAProgressOverlayView'
+  pod 'YapDatabase', :git => 'git@github.com:nicnocquee/YapDatabase.git'
+  pod '1PasswordExtension'
+  pod 'DLFPhotosPicker'
+  pod 'COSTouchVisualizer'
+  pod 'Bolts'
+  pod 'TDImageColors'
+  pod 'CSNotificationView'
+
+  target 'DelightfulTests' do
+    inherit! :search_paths
+    # Pods for testing
+    pod 'OCMock'
+    pod 'Expecta'
+    pod 'OHHTTPStubs'
+  end
+
 end
-
-

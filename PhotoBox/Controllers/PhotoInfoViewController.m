@@ -11,6 +11,10 @@
 #import "Photo.h"
 #import "UIView+Additionals.h"
 
+#import "LocationManager.h"
+
+#import "InfoTableViewCell.h"
+
 #define PHOTO_INFO_FONT_SIZE 12
 #define PHOTO_INFO_CLOSE_OFFSET 50
 
@@ -20,6 +24,7 @@
 
 @property (nonatomic, strong) NSArray *sections;
 @property (nonatomic, strong) NSArray *cameraDataSectionRows;
+@property (nonatomic, copy) NSArray *tags;
 
 @end
 
@@ -39,8 +44,9 @@
     [super viewDidLoad];
     
     [self.tableView setBackgroundColor:[UIColor clearColor]];
-
+    
     self.sections = @[NSLocalizedString(@"Camera Data", nil), NSLocalizedString(@"Tags", nil)];
+    
     self.cameraDataSectionRows = @[
                                    @[NSLocalizedString(@"Camera Make", nil), NSStringFromSelector(@selector(exifCameraMake))],
                                    @[NSLocalizedString(@"Camera Model", nil), NSStringFromSelector(@selector(exifCameraModel))],
@@ -51,10 +57,74 @@
                                    @[NSLocalizedString(@"Dimension", nil), NSStringFromSelector(@selector(dimension))],
                                    @[NSLocalizedString(@"File Name", nil), NSStringFromSelector(@selector(filenameOriginal))],
                                    @[NSLocalizedString(@"Date Taken", nil), NSStringFromSelector(@selector(dateTakenString))],
+                                   @[NSLocalizedString(@"Location", nil), NSStringFromSelector(@selector(latitudeLongitudeString))],
+                                   @[NSLocalizedString(@"Location Name", nil), @"[[Searching ...]]"]
                                    ];
     
     CGFloat cellHeight = [self tableView:nil heightForRowAtIndexPath:nil];
     [self.tableView setContentInset:UIEdgeInsetsMake(CGRectGetHeight(self.tableView.frame)-cellHeight*(self.cameraDataSectionRows.count+1), 0, 0, 0)];
+    
+    [self.tableView registerNib:[UINib nibWithNibName:NSStringFromClass([InfoTableViewCell class]) bundle:nil] forCellReuseIdentifier:@"Cell"];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    NSNumber *latitude = [self.photo valueForKey:@"latitude"];
+    NSNumber *longitude = [self.photo valueForKey:@"longitude"];
+    if (latitude && ![latitude isKindOfClass:[NSNull class]] && longitude && ![longitude isKindOfClass:[NSNull class]]) {
+        CLLocation *location = [[CLLocation alloc] initWithLatitude:[latitude doubleValue] longitude:[longitude doubleValue]];
+        if (location) {
+            __weak typeof (self) selfie = self;
+            
+            [[[LocationManager sharedManager] nameForLocation:location] continueWithBlock:^id(BFTask *task) {
+                NSArray *placemarks = task.result;
+                CLPlacemark *firstPlacemark = [placemarks firstObject];
+                NSString *placemarkName = firstPlacemark.name;
+                NSString *placemarkLocality = firstPlacemark.locality;
+                NSString *placemarkCountry = firstPlacemark.country;
+                NSString *placeName = @"";
+                if (placemarkName) {
+                    if (placemarkLocality && placemarkCountry) {
+                        placeName = [NSString stringWithFormat:@"%@, %@, %@", placemarkName, placemarkLocality, placemarkCountry];
+                    } else if (placemarkLocality) {
+                        placeName = [NSString stringWithFormat:@"%@, %@", placemarkName, placemarkLocality];
+                    } else if (placemarkCountry) {
+                        placeName = [NSString stringWithFormat:@"%@, %@", placemarkName, placemarkCountry];
+                    }
+                } else {
+                    if (placemarkLocality && placemarkCountry) {
+                        placeName = [NSString stringWithFormat:@"%@ %@", placemarkLocality, placemarkCountry];
+                    } else if (placemarkCountry) {
+                        placeName = placemarkCountry;
+                    } else {
+                        placemarkName = placemarkLocality;
+                    }
+                }
+                
+                NSMutableArray *cameraDataSectionRowsCopy = [selfie.cameraDataSectionRows mutableCopy];
+                [cameraDataSectionRowsCopy removeLastObject];
+                [cameraDataSectionRowsCopy addObject:@[NSLocalizedString(@"Location Name", nil), placeName]];
+                
+                selfie.cameraDataSectionRows = cameraDataSectionRowsCopy;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [selfie.tableView reloadData];
+                });
+                
+                return nil;
+            }];
+        } else {
+            NSMutableArray *cameraDataSectionRowsCopy = [self.cameraDataSectionRows mutableCopy];
+            [cameraDataSectionRowsCopy removeLastObject];
+            [cameraDataSectionRowsCopy addObject:@[NSLocalizedString(@"Location Name", nil), @""]];
+            self.cameraDataSectionRows = cameraDataSectionRowsCopy;
+            [self.tableView reloadData];
+        }
+    } else {
+        NSMutableArray *cameraDataSectionRowsCopy = [self.cameraDataSectionRows mutableCopy];
+        [cameraDataSectionRowsCopy removeLastObject];
+        [cameraDataSectionRowsCopy addObject:@[NSLocalizedString(@"Location Name", nil), @""]];
+        self.cameraDataSectionRows = cameraDataSectionRowsCopy;
+        [self.tableView reloadData];
+    }
 }
 
 - (void)didReceiveMemoryWarning
@@ -81,45 +151,41 @@
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     static NSString *CellIdentifier = @"Cell";
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:CellIdentifier];
-    
-    if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:CellIdentifier];
-        [cell.textLabel setTextColor:[UIColor whiteColor]];
-        [cell.textLabel setBackgroundColor:[UIColor clearColor]];
-        [cell setBackgroundColor:[UIColor clearColor]];
-        [cell.contentView setBackgroundColor:[UIColor clearColor]];
-    }
-    
-    if (indexPath.section == 0) {
-        [self configureCameraDataCell:cell forIndexPath:indexPath];
-    } else {
-        NSString *tag = self.photo.tags[indexPath.row];
-        [cell.textLabel setText:tag];
-        [cell.textLabel setFont:[UIFont systemFontOfSize:PHOTO_INFO_FONT_SIZE]];
-    }
+    InfoTableViewCell *cell = (InfoTableViewCell *)[tableView dequeueReusableCellWithIdentifier:CellIdentifier forIndexPath:indexPath];
+    [self configureCell:cell indexPath:indexPath];
     
     return cell;
 }
 
-- (void)configureCameraDataCell:(UITableViewCell *)cell forIndexPath:(NSIndexPath *)indexPath {
-    NSArray *cameraDataRow = self.cameraDataSectionRows[indexPath.row];
-    id value = [self.photo valueForKey:cameraDataRow[1]];
-    if ([value isKindOfClass:[NSNumber class]]) {
-        value = [NSString stringWithFormat:@"%d", [value integerValue]];
+- (void)configureCell:(InfoTableViewCell *)cell indexPath:(NSIndexPath *)indexPath {
+    if (indexPath.section == 0) {
+        [self configureCameraDataCell:cell forIndexPath:indexPath];
+    } else {
+        if (!self.tags) {
+            self.tags = [self.photo.tags sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"self" ascending:YES]]];
+        }
+        NSString *tag = self.tags[indexPath.row];
+        [cell setText:tag detail:nil];
     }
-    cell.textLabel.attributedText = [self attributedStringForCameraData:cameraDataRow[0] value:value];
 }
 
-- (NSAttributedString *)attributedStringForCameraData:(NSString *)cameraData value:(NSString *)value {
-    if (!value) value = NSLocalizedString(@"Not available", nil);
-    NSString *cameraDataString = [NSString stringWithFormat:@"%@ %@", cameraData, value];
-    NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:cameraDataString];
-    [attr addAttribute:NSFontAttributeName value:[UIFont boldSystemFontOfSize:PHOTO_INFO_FONT_SIZE] range:[cameraDataString rangeOfString:cameraData]];
-    [attr addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:PHOTO_INFO_FONT_SIZE] range:[cameraDataString rangeOfString:value]];
-    [attr addAttribute:NSForegroundColorAttributeName value:[UIColor whiteColor] range:[cameraDataString rangeOfString:cameraData]];
-    [attr addAttribute:NSForegroundColorAttributeName value:[UIColor whiteColor] range:[cameraDataString rangeOfString:value]];
-    return attr;
+- (void)configureCameraDataCell:(InfoTableViewCell *)cell forIndexPath:(NSIndexPath *)indexPath {
+    NSArray *cameraDataRow = self.cameraDataSectionRows[indexPath.row];
+    NSString *key = cameraDataRow[1];
+    NSString *value = nil;
+    if (key && [self.photo respondsToSelector:NSSelectorFromString(key)]) {
+        id val = [self.photo valueForKey:key];
+        if ([val isKindOfClass:[NSNumber class]]) {
+            val = [NSString stringWithFormat:@"%f", [val doubleValue]];
+            value = [[val stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"0"]] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"."]];
+        } else value = val;
+    } else {
+        if (key) {
+            value = [key stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"[[]]"]];
+        }
+    }
+    if (!value || value.length == 0) value = NSLocalizedString(@"Not available", nil);
+    [cell setText:cameraDataRow[0] detail:value];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -127,7 +193,11 @@
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    return 30;
+    InfoTableViewCell *cell = [[[NSBundle mainBundle] loadNibNamed:NSStringFromClass([InfoTableViewCell class]) owner:nil options:0] firstObject];
+    [self configureCell:cell indexPath:indexPath];
+    [cell setNeedsLayout];
+    [cell layoutIfNeeded];
+    return cell.intrinsicContentSize.height;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {

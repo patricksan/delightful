@@ -21,14 +21,10 @@
 
 - (void)openActivityPickerForURL:(NSURL *)URL completion:(void(^)())completion;
 
-- (void)toggleNavigationBarHidden;
+- (BOOL)toggleNavigationBarHidden;
 
 - (void)hideNavigationBar;
 
 - (void)setNavigationBarHidden:(BOOL)hidden animated:(BOOL)animated;
-
-- (void)loadPhotosInAlbum:(Album *)album;
-
-- (void)loadPhotosInTag:(Tag *)tag;
 
 @end

@@ -9,23 +9,57 @@
 #import "Photo.h"
 #import "Tag.h"
 #import "Album.h"
-#import "FetchedIn.h"
 
 #import "NSObject+Additionals.h"
 #import "NSArray+Additionals.h"
+#import "MTLModel+NSCoding.h"
+#import "NSDate+Escort.h"
 
 @implementation Photo
 
 @synthesize originalImage = _originalImage;
+@synthesize pathBaseImage = _pathBaseImage;
 
+#pragma mark - NSCoding
+
++ (NSDictionary *)encodingBehaviorsByPropertyKey {
+    NSMutableDictionary *superBehaviour = [[super encodingBehaviorsByPropertyKey] mutableCopy];
+    [self ignorePropertyInBehaviour:superBehaviour propertyKey:NSStringFromSelector(@selector(placeholderImage))];
+    [self ignorePropertyInBehaviour:superBehaviour propertyKey:NSStringFromSelector(@selector(asAlbumCoverImage))];
+    
+    return superBehaviour;
+}
+
++ (void)ignorePropertyInBehaviour:(NSMutableDictionary *)behaviour propertyKey:(NSString *)propertyKey {
+    if ([behaviour objectForKey:propertyKey]) {
+        [behaviour setObject:@(MTLModelEncodingBehaviorExcluded) forKey:propertyKey];
+    }
+}
 
 #pragma mark - Getters
+
+- (CLLocation *)clLocation {
+    NSNumber *latitude = self.latitude;
+    NSNumber *longitude = self.longitude;
+    CLLocation *location;
+    if (latitude && ![latitude isKindOfClass:[NSNull class]] && longitude && ![longitude isKindOfClass:[NSNull class]]) {
+        location = [[CLLocation alloc] initWithLatitude:[latitude doubleValue] longitude:[longitude doubleValue]];
+    }
+    return location;
+}
 
 - (PhotoBoxImage *)originalImage {
     if (!_originalImage) {
         _originalImage = [[PhotoBoxImage alloc] initWithArray:@[(self.pathOriginal)?self.pathOriginal.absoluteString:@"", self.width?:@(0), self.height?:@(0)]];
     }
     return _originalImage;
+}
+
+- (PhotoBoxImage *)pathBaseImage {
+    if (!_pathBaseImage) {
+        _pathBaseImage = [[PhotoBoxImage alloc] initWithArray:@[(self.pathBase)?self.pathBase.absoluteString:@"", self.width?:@(0), self.height?:@(0)]];
+    }
+    return _pathBaseImage;
 }
 
 - (PhotoBoxImage *)thumbnailImage {
@@ -36,6 +70,9 @@
 }
 
 - (PhotoBoxImage *)normalImage {
+    if (IS_IPAD) {
+        return self.pathBaseImage;
+    }
     return self.photo640x640;
 }
 
@@ -48,23 +85,46 @@
     return toReturn;
 }
 
+- (NSString *)dateUploadedString {
+    NSString *toReturn = [NSString stringWithFormat:@"%d-%02d-%02d", [self.dateUploadedYear intValue], [self.dateUploadedMonth intValue], [self.dateUploadedDay intValue]];
+    return toReturn;
+}
+
+- (NSDate *)dateUploadedDate {
+    return [NSDate dateWithTimeIntervalSince1970:self.dateUploaded.intValue];
+}
+
+- (NSDate *)dateTakenDate {
+    return [NSDate dateWithTimeIntervalSince1970:self.dateTaken.intValue];
+}
+
 - (NSString *)dateMonthYearTakenString {
     return [NSString stringWithFormat:@"%d-%02d", [self.dateTakenYear intValue], [self.dateTakenMonth intValue]];
+}
+
+- (NSString *)dateTimeTakenLocalizedString {
+    return [NSDateFormatter localizedStringFromDate:[self dateTakenDate] dateStyle:NSDateFormatterMediumStyle timeStyle:NSDateFormatterShortStyle];
 }
 
 - (NSString *)dimension {
     return [NSString stringWithFormat:@"%dx%d", [self.width intValue], [self.height intValue]];
 }
 
+- (NSString *)latitudeLongitudeString {
+    if (self.latitude && self.longitude) {
+        return [NSString stringWithFormat:@"%@,%@", self.latitude, self.longitude];
+    }
+    return nil;
+}
+
 #pragma mark - JSON Serialization
 
 + (NSDictionary *)JSONKeyPathsByPropertyKey {
-    return [[super class] photoBoxJSONKeyPathsByPropertyKeyWithDictionary:@{
-                                                                            @"photoId": @"id",
-                                                                            @"photoHash":@"hash",
-                                                                            @"photoDescription":@"description",
-                                                                            @"dateMonthYearTakenString":NSNull.null
-                                                                            }];
+    return [[NSDictionary mtl_identityPropertyMapWithModel:[self class]] mtl_dictionaryByAddingEntriesFromDictionary:[[super class] photoBoxJSONKeyPathsByPropertyKeyWithDictionary:@{
+                                                                                                                                                                                                        @"photoId": @"id",
+                                                                                                                                                                                                        @"photoHash":@"hash",
+                                                                                                                                                                                                        @"photoDescription":@"description"
+                                                                                                                                                                                                        }]];
 }
 
 + (NSValueTransformer *)timestampJSONTransformer {
@@ -77,8 +137,10 @@
         dateFormatter.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
     });
     
-    return [MTLValueTransformer transformerWithBlock:^id(NSString *string) {
+    return  [MTLValueTransformer transformerUsingForwardBlock:^id(NSString *string, BOOL *success, NSError *__autoreleasing *error) {
         return [dateFormatter dateFromString:string];
+    } reverseBlock:^id(id value, BOOL *success, NSError *__autoreleasing *error) {
+        return value;
     }];
 }
 
@@ -99,9 +161,9 @@
 }
 
 + (MTLValueTransformer *)photoImageTransformer {
-    return [MTLValueTransformer reversibleTransformerWithForwardBlock:^(NSArray *imageArray) {
+    return [MTLValueTransformer transformerUsingForwardBlock:^id(NSArray *imageArray, BOOL *success, NSError *__autoreleasing *error) {
         return [[PhotoBoxImage alloc] initWithArray:imageArray];
-    } reverseBlock:^(PhotoBoxImage *image) {
+    } reverseBlock:^id(PhotoBoxImage *image, BOOL *success, NSError *__autoreleasing *error) {
         return [image toArray];
     }];
 }

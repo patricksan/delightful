@@ -7,11 +7,12 @@
 //
 
 #import "ConnectionManager.h"
-#import <AFOAuth1Client.h>
-#import "PhotoBoxClient.h"
+#import "AFOAuth1Client.h"
+#import "APIClient.h"
 #import "DownloadedImageManager.h"
 #import "FavoritesManager.h"
 #import "HintsViewController.h"
+#import "TMCache.h"
 
 NSString *baseURLUserDefaultKey = @"photobox.base.url";
 NSString *consumerTokenIdentifier = @"photobox.consumer.token";
@@ -47,12 +48,14 @@ NSString *PhotoBoxAccessTokenDidAcquiredNotification = @"com.photobox.accessToke
     AFOAuth1Token *consumerToken = [AFOAuth1Token retrieveCredentialWithIdentifier:consumerTokenIdentifier];
     if (consumerToken) {
         self.consumerToken = consumerToken;
+        [[APIClient sharedClient] setConsumerToken:consumerToken];
     } else {
         self.consumerToken = nil;
     }
     AFOAuth1Token *oauthToken = [AFOAuth1Token retrieveCredentialWithIdentifier:oauthTokenIdentifier];
     if (oauthToken) {
         self.oauthToken = oauthToken;
+        [[APIClient sharedClient] setAccessToken:oauthToken];
     } else {
         self.oauthToken = nil;
     }
@@ -65,16 +68,19 @@ NSString *PhotoBoxAccessTokenDidAcquiredNotification = @"com.photobox.accessToke
         self.consumerToken = [[AFOAuth1Token alloc] initWithKey:@"whatever" secret:@"whatever" session:nil expiration:nil renewable:YES];
         
     }
+    
+    
 }
 
-- (void)connectAsTester {
-    [self setBaseURL:[NSURL URLWithString:@"http://delightful.no-ip.biz"]];
+- (void)connectAsGuest:(NSURL *)url {
+    self.isGuestUser = YES;
+    [self setBaseURL:url];
     _consumerToken = [[AFOAuth1Token alloc] initWithKey:@"c74a0c32f07dd015328d19d7d8cddc" secret:@"eb6d7e5bbb" session:nil expiration:nil renewable:YES];
     [AFOAuth1Token storeCredential:_consumerToken withIdentifier:consumerTokenIdentifier];
     _oauthToken = [[AFOAuth1Token alloc] initWithKey:@"7fefb2ccfd7c059985c7bad3ccf6e6" secret:@"978a2788c8" session:nil expiration:nil renewable:YES];
     [AFOAuth1Token storeCredential:_oauthToken withIdentifier:oauthTokenIdentifier];
     
-    [[PhotoBoxClient sharedClient] refreshConnectionParameters];
+    [[APIClient sharedClient] refreshConnectionParameters];
     
     [self willChangeValueForKey:NSStringFromSelector(@selector(isUserLoggedIn))];
     _userLoggedIn = _oauthToken?YES:NO;
@@ -147,33 +153,42 @@ NSString *PhotoBoxAccessTokenDidAcquiredNotification = @"com.photobox.accessToke
 }
 
 - (void)logout {
+    [self logoutWithShowingLoginScreen:YES];
+}
+
+- (void)logoutWithShowingLoginScreen:(BOOL)show {
     [self deleteTokens];
+    self.isGuestUser = NO;
     [[DownloadedImageManager sharedManager] clearHistory];
     [[FavoritesManager sharedManager] clearHistory];
     self.baseURL = nil;
     
+    [[TMCache sharedCache] removeAllObjects:nil];
     NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
     [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:appDomain];
     
     [self setup];
     
-    [[PhotoBoxClient sharedClient] setAccessToken:nil];
-    [[PhotoBoxClient sharedClient] setValue:@"http://trovebox.com" forKey:@"baseURL"];
-    [self openLoginFromStoryboardWithIdentifier:@"loginViewController"];
+    [[APIClient sharedClient] setAccessToken:nil];
+    
+    if (show) {
+        [self openLoginFromStoryboardWithIdentifier:@"loginViewController"];
+    }
 }
 
 - (BOOL)isUserLoggingIn {
     return [[NSUserDefaults standardUserDefaults] boolForKey:IS_USER_LOGGING_IN_KEY];
 }
 
-- (void)startOAuthAuthorizationWithServerURL:(NSString *)serverStringURL {
+- (NSURL *)startOAuthAuthorizationWithServerURL:(NSString *)serverStringURL {
     [[NSUserDefaults standardUserDefaults] setBool:YES forKey:IS_USER_LOGGING_IN_KEY];
     [[NSUserDefaults standardUserDefaults] synchronize];
     
     [self setBaseURL:[NSURL URLWithString:serverStringURL]];
-    [[PhotoBoxClient sharedClient] setValue:self.baseURL forKey:@"baseURL"];
-    NSAssert([[[[PhotoBoxClient sharedClient] baseURL] absoluteString] isEqualToString:self.baseURL.absoluteString], @"Expected base url: %@. Actual: %@", self.baseURL.absoluteString, [[[PhotoBoxClient sharedClient] baseURL] absoluteString]);
-    [[UIApplication sharedApplication] openURL:[[self class] oAuthInitialUrlForServer:serverStringURL]];
+   // NSAssert([[[[APIClient sharedClient] baseURL] absoluteString] isEqualToString:self.baseURL.absoluteString], @"Expected base url: %@. Actual: %@", self.baseURL.absoluteString, [[[APIClient sharedClient] baseURL] absoluteString]);
+    //[[UIApplication sharedApplication] openURL:[[self class] oAuthInitialUrlForServer:serverStringURL]];
+    
+    return [[self class] oAuthInitialUrlForServer:serverStringURL];
 }
 
 - (void)continueOauthAuthorizationWithQuery:(NSString *)query {
@@ -192,17 +207,21 @@ NSString *PhotoBoxAccessTokenDidAcquiredNotification = @"com.photobox.accessToke
             consumerSecret = value;
         }
     }
-    self.consumerToken = [[AFOAuth1Token alloc] initWithKey:consumerKey secret:consumerSecret session:nil expiration:nil renewable:YES];
-    [[PhotoBoxClient sharedClient] setValue:consumerKey forKey:@"key"];
-    [[PhotoBoxClient sharedClient] setValue:consumerSecret forKey:@"secret"];
+    AFOAuth1Token *consumerToken = [[AFOAuth1Token alloc] initWithKey:consumerKey secret:consumerSecret session:nil expiration:nil renewable:YES];
+    self.consumerToken = consumerToken;
+    [[APIClient sharedClient] setConsumerToken:consumerToken];
     
     AFOAuth1Token *requestToken = [[AFOAuth1Token alloc] initWithQueryString:query];
     NSString *verifier = [requestToken.userInfo objectForKey:@"oauth_verifier"];
     [requestToken setVerifier:verifier];
     
-    [[PhotoBoxClient sharedClient] acquireOAuthAccessTokenWithPath:[[self class] oAuthAccessUrlForServer:self.baseURL.absoluteString].absoluteString requestToken:requestToken accessMethod:@"POST" success:^(AFOAuth1Token *accessToken, id responseObject) {
+    [[APIClient sharedClient] acquireOAuthAccessTokenWithPath:@"/v1/oauth/token/access"
+                                                 requestToken:requestToken
+                                                 accessMethod:@"POST"
+                                                      success:^(AFOAuth1Token *accessToken, id responseObject) {
         self.oauthToken = accessToken;
-        [[PhotoBoxClient sharedClient] setAccessToken:accessToken];
+        [[APIClient sharedClient] setAccessToken:accessToken];
+                                        
         [[NSNotificationCenter defaultCenter] postNotificationName:PhotoBoxAccessTokenDidAcquiredNotification object:nil];
     } failure:^(NSError *error) {
         UIAlertView *alert = [[UIAlertView alloc] initWithTitle:NSLocalizedString(@"Authorization Failure", nil) message:error.localizedDescription delegate:nil cancelButtonTitle:NSLocalizedString(@"Dismiss", nil) otherButtonTitles: nil];
@@ -228,9 +247,7 @@ NSString *PhotoBoxAccessTokenDidAcquiredNotification = @"com.photobox.accessToke
     [self didChangeValueForKey:@"isShowingLoginPage"];
     UIWindow *window = [[[UIApplication sharedApplication] delegate] window];
     [window.rootViewController dismissViewControllerAnimated:YES completion:^{
-        HintsViewController *hints = [[HintsViewController alloc] init];
-        UINavigationController *navCon = [[UINavigationController alloc] initWithRootViewController:hints];
-        [window.rootViewController presentViewController:navCon animated:YES completion:nil];
+        [[UIApplication sharedApplication] setStatusBarStyle:UIStatusBarStyleDefault];
     }];
 }
 

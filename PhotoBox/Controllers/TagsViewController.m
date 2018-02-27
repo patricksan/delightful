@@ -7,55 +7,57 @@
 //
 
 #import "TagsViewController.h"
-
 #import "Tag.h"
-
 #import "TagRowCell.h"
-
 #import "PhotosViewController.h"
-
-#import "UIViewController+DelightfulViewControllers.h"
-
-#import <JASidePanelController.h>
-
 #import "AppDelegate.h"
-
 #import "UIViewController+Additionals.h"
+#import "TagsDataSource.h"
+#import "SyncEngine.h"
+#import "SortTableViewController.h"
+#import "PhotosSubsetViewController.h"
+#import "Photo.h"
+#import "SortingConstants.h"
 
-@interface TagsViewController ()
+@interface TagsViewController () <UICollectionViewDelegate, SortingDelegate>
+
+@property (nonatomic, strong) NSString *currentSort;
 
 @end
 
 @implementation TagsViewController
 
-- (id)initWithCollectionViewLayout:(UICollectionViewLayout *)layout {
-    self = [super initWithCollectionViewLayout:layout];
-    if (self) {
-        [self setup];
-    }
-    return self;
-}
-
-- (id)init
-{
-    self = [super init];
-    if (self) {
-        [self setup];
-    }
-    return self;
-}
-
-- (void)setup {
-    
-}
 
 - (void)viewDidLoad
 {
     [super viewDidLoad];
 	// Do any additional setup after loading the view.
     
-    [self setup];
     [self.collectionView registerClass:[TagRowCell class] forCellWithReuseIdentifier:[self cellIdentifier]];
+    [self.collectionView setDelegate:self];
+    
+    [self setTitle:NSLocalizedString(@"Tags", nil)];
+    
+    self.currentSort = nameAscSortKey;
+    if ([[NSUserDefaults standardUserDefaults] objectForKey:DLF_LAST_SELECTED_TAGS_SORT]) {
+        self.currentSort = [[NSUserDefaults standardUserDefaults] objectForKey:DLF_LAST_SELECTED_TAGS_SORT];
+    }
+    
+    [self.collectionView reloadData];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [[SyncEngine sharedEngine] startSyncingTags];
+    });
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [[SyncEngine sharedEngine] pauseSyncingTags:NO];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    [[SyncEngine sharedEngine] pauseSyncingTags:YES];
 }
 
 - (void)didReceiveMemoryWarning
@@ -64,7 +66,47 @@
     // Dispose of any resources that can be recreated.
 }
 
+- (void)didTapSortButton:(id)sender {
+    SortTableViewController *sort = [[SortTableViewController alloc] initWithStyle:UITableViewStyleGrouped];
+    [sort setResourceClass:Tag.class];
+    [sort setSortingDelegate:self];
+    [sort setSelectedSort:self.currentSort];
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:sort];
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
+#pragma mark - SortingDelegate
+
+- (void)sortTableViewController:(id)sortTableViewController didSelectSort:(NSString *)sort {
+    if (![self.currentSort isEqualToString:sort]) {
+        self.currentSort = sort;
+        [[NSUserDefaults standardUserDefaults] setObject:self.currentSort forKey:DLF_LAST_SELECTED_TAGS_SORT];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        NSArray *sortArray = [sort componentsSeparatedByString:@","];
+        BOOL ascending = YES;
+        TagsSortKey selectedSortKey;
+        if ([[sortArray objectAtIndex:0] isEqualToString:NSStringFromSelector(@selector(name))]) {
+            selectedSortKey = TagsSortKeyName;
+        } else {
+            selectedSortKey = TagsSortKeyNumberOfPhotos;
+        }
+        if ([[[sortArray objectAtIndex:1] lowercaseString] isEqualToString:@"desc"]) {
+            ascending = NO;
+        }
+        [((TagsDataSource *)self.dataSource) sortBy:selectedSortKey ascending:ascending];
+        [sortTableViewController dismissViewControllerAnimated:YES completion:^{
+            [self.collectionView scrollToItemAtIndexPath:[NSIndexPath indexPathForItem:0 inSection:0] atScrollPosition:UICollectionViewScrollPositionTop animated:NO];
+        }];
+    } else {
+        [sortTableViewController dismissViewControllerAnimated:YES completion:nil];
+    }
+}
+
 #pragma mark - Getters
+
+- (Class)dataSourceClass {
+    return TagsDataSource.class;
+}
 
 - (ResourceType)resourceType {
     return TagResource;
@@ -74,54 +116,34 @@
     return [Tag class];
 }
 
-- (NSString *)sectionHeaderIdentifier {
-    return @"tagSection";
-}
-
 - (NSString *)cellIdentifier {
     return @"tagCell";
-}
-
-- (NSArray *)sortDescriptors {
-    return @[[NSSortDescriptor sortDescriptorWithKey:NSStringFromSelector(@selector(tagId)) ascending:YES]];
-}
-
-- (int)pageSize {
-    return 0;
-}
-
-#pragma mark - Do stuff
-
-/**
- *  We're subclassing AlbumsViewController so let's just override this method to set the title of this view controller.
- *
- *  @param count Number of tags.
- *  @param max   Total number of tags.
- */
-
-- (void)setAlbumsCount:(int)count max:(int)max{
-    if (count == 0) {
-        self.title = NSLocalizedString(@"Tags", nil);
-    } else {
-        self.title = [NSString stringWithFormat:@"%@ (%d/%d)", NSLocalizedString(@"Tags", nil), count, max];
-    }
-    
-    [self.tabBarItem setTitle:self.title];
-    [self.tabBarItem setImage:[[UIImage imageNamed:@"Tags"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
 }
 
 #pragma mark - Collection view delegate
 
 - (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
     Tag *tag = (Tag *)[self.dataSource itemAtIndexPath:indexPath];
-    [self loadPhotosInTag:tag];
+    
+    NSString *tagId = [tag.tagId copy];
+    
+    PhotosSubsetViewController *subsetController = [[UIStoryboard storyboardWithName:@"Main" bundle:nil] instantiateViewControllerWithIdentifier:@"photosSubsetViewController"];
+    [subsetController setItem:tag];
+    [subsetController setObjectKey:NSStringFromSelector(@selector(tags))];
+    [subsetController setFilterName:[NSString stringWithFormat:@"tag-%@", tagId]];
+    
+    [self.navigationController pushViewController:subsetController animated:YES];
 }
 
 #pragma mark - Collection View Flow Layout Delegate
 
 - (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout sizeForItemAtIndexPath:(NSIndexPath *)indexPath {
-    CGFloat collectionViewWidth = CGRectGetWidth(self.collectionView.frame);
+    CGFloat collectionViewWidth = CGRectGetWidth(collectionView.frame);
     return CGSizeMake(collectionViewWidth, 44);
+}
+
+- (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout*)collectionViewLayout referenceSizeForHeaderInSection:(NSInteger)section {
+    return CGSizeZero;
 }
 
 @end

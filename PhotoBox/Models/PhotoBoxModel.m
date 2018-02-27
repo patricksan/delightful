@@ -14,7 +14,7 @@
 
 #import "NSObject+Additionals.h"
 
-#import <NSDate+Escort.h>
+#import "NSDate+Escort.h"
 
 @implementation PhotoBoxModel
 
@@ -47,18 +47,18 @@
 #pragma mark - JSON serialization
 
 + (NSDictionary *)JSONKeyPathsByPropertyKey {
-    return @{@"totalRows": NSNull.null, @"totalPages": NSNull.null, @"currentPage": NSNull.null, @"currentRow": NSNull.null, @"itemId": NSNull.null};
+    return @{};
 }
 
 + (NSValueTransformer *)toNumberTransformer {
-    return [MTLValueTransformer reversibleTransformerWithForwardBlock:^id(id exifFNumber) {
+    return [MTLValueTransformer transformerUsingForwardBlock:^id(id exifFNumber, BOOL *success, NSError *__autoreleasing *error) {
         if ([exifFNumber isKindOfClass:[NSString class]]) {
             NSNumberFormatter * f = [[NSNumberFormatter alloc] init];
             [f setNumberStyle:NSNumberFormatterDecimalStyle];
             return [f numberFromString:exifFNumber];
         }
         return exifFNumber;
-    } reverseBlock:^id(NSNumber *exifFNumber) {
+    } reverseBlock:^id(NSNumber *exifFNumber, BOOL *success, NSError *__autoreleasing *error) {
         NSNumberFormatter * f = [[NSNumberFormatter alloc] init];
         [f setNumberStyle:NSNumberFormatterDecimalStyle];
         return [f stringFromNumber:exifFNumber];
@@ -66,14 +66,14 @@
 }
 
 + (NSValueTransformer *)toStringTransformer {
-    return [MTLValueTransformer reversibleTransformerWithForwardBlock:^id(id exifFNumber) {
+    return [MTLValueTransformer transformerUsingForwardBlock:^id(id exifFNumber, BOOL *success, NSError *__autoreleasing *error) {
         if ([exifFNumber isKindOfClass:[NSString class]]) {
             return exifFNumber;
         }
         NSNumberFormatter * f = [[NSNumberFormatter alloc] init];
         [f setNumberStyle:NSNumberFormatterDecimalStyle];
         return [f stringFromNumber:exifFNumber];
-    } reverseBlock:^id(NSString *exifFNumber) {
+    } reverseBlock:^id(NSString *exifFNumber, BOOL *success, NSError *__autoreleasing *error) {
         return exifFNumber;
     }];
 }
@@ -95,38 +95,6 @@
     [mutableDict removeObjectsForKeys:@[@"totalRows", @"totalPages", @"currentPage", @"currentRow"]];
     if (dictionary) [mutableDict addEntriesFromDictionary:dictionary];
     return mutableDict;
-}
-
-#pragma mark - Refresh
-
-- (void)setLastRefresh:(NSDate *)lastRefresh {
-    _lastRefresh = lastRefresh;
-    
-    [[NSUserDefaults standardUserDefaults] setObject:lastRefresh forKey:[self lastRefreshCacheKey]];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-}
-
-- (BOOL)needRefresh {
-    NSDate *last = self.lastRefresh;
-    if (!last) {
-        last = [[NSUserDefaults standardUserDefaults] objectForKey:[self lastRefreshCacheKey]];
-        if (!last) {
-            return YES;
-        }
-    }
-    NSInteger hours = [[NSDate date] hoursAfterDate:last];
-    if (hours > 22) {
-        return YES;
-    }
-    return NO;
-}
-
-- (NSString *)lastRefreshCacheKey {
-    return [NSString stringWithFormat:@"LAST_REFRESH_KEY-%@", [self cacheKey]];
-}
-
-- (NSString *)cacheKey {
-    return NSStringFromClass([self class]);
 }
 
 

@@ -7,112 +7,163 @@
 //
 
 #import "PhotosViewController.h"
-
 #import "Album.h"
 #import "Photo.h"
 #import "Tag.h"
-
 #import "LocationManager.h"
 #import "ConnectionManager.h"
-
 #import "PhotosSectionHeaderView.h"
+#import "FooterLoadingReusableView.h"
 #import "PhotoCell.h"
-
-#import "PhotosHorizontalScrollingViewController.h"
+#import "PhotosHorizontalScrollingYapBackedViewController.h"
 #import "SettingsTableViewController.h"
-
 #import "CollectionViewSelectCellGestureRecognizer.h"
-
 #import "UIView+Additionals.h"
 #import "NSString+Additionals.h"
 #import "UIViewController+Additionals.h"
-
-#import <JASidePanelController.h>
-#import "UIViewController+DelightfulViewControllers.h"
-
 #import "AppDelegate.h"
-
-#import "DelightfulLayout.h"
-
-#import "PhotosDataSource.h"
-
+#import "GroupedPhotosDataSource.h"
 #import "Photo.h"
-
 #import "Album.h"
-
 #import "Tag.h"
-
 #import "StickyHeaderFlowLayout.h"
-
 #import "UIImageView+Additionals.h"
-
 #import "NoPhotosView.h"
-
 #import "HeaderImageView.h"
+#import "DelightfulCache.h"
+#import "TagsAlbumsPickerViewController.h"
+#import "DLFAsset.h"
+#import "ShowFullScreenTransitioningDelegate.h"
+#import "NSAttributedString+DelighftulFonts.h"
+#import "SyncEngine.h"
+#import "SortTableViewController.h"
+#import "UploadViewController.h"
+#import "DLFImageUploader.h"
+#import "SortingConstants.h"
+#import "DLFDatabaseManager.h"
+#import "PHPhotoLibrary+Additionals.h"
+#import "NHBalancedFlowLayout.h"
+#import "CollectionViewChangeColumnsNumberGestureRecognizer.h"
+#import "PureLayout.h"
+#import "DLFPhotoCell.h"
+#import "DLFPhotosPickerViewController.h"
+#import "DLFDetailViewController.h"
+#import "CLPlacemark+Additionals.h"
 
-@interface PhotosViewController () <UICollectionViewDelegateFlowLayout, PhotosHorizontalScrollingViewControllerDelegate>
+#define UPLOADED_MARK_TAG 123456910
 
-@property (nonatomic, strong) PhotoBoxCell *selectedCell;
-@property (nonatomic, assign) CGRect selectedItemRect;
+@interface PhotosViewController () <UICollectionViewDelegateFlowLayout, PhotosHorizontalScrollingViewControllerDelegate, UINavigationControllerDelegate, TagsAlbumsPickerViewControllerDelegate, SortingDelegate, DLFPhotosPickerViewControllerDelegate, UploadViewControllerDelegate, NHBalancedFlowLayoutDelegate, CollectionViewChangeColumnsNumberGestureRecognizerDelegate>
+
 @property (nonatomic, strong) CollectionViewSelectCellGestureRecognizer *selectGesture;
 @property (nonatomic, assign) BOOL observing;
 @property (nonatomic, weak) HeaderImageView *headerImageView;
 @property (nonatomic, weak) NoPhotosView *noPhotosView;
+@property (nonatomic, strong) NSMutableArray *uploadingPhotos;
+@property (nonatomic, strong) ShowFullScreenTransitioningDelegate *transitionDelegate;
+@property (nonatomic, strong) UploadViewController *uploadViewController;
+@property (nonatomic, assign) BOOL doneUploadingNeedRefresh;
+@property (nonatomic, assign) BOOL _showRightBarButtonItem;
+@property (nonatomic, strong) CollectionViewChangeColumnsNumberGestureRecognizer *pinchGestureRecognizer;
+
 @end
 
 @implementation PhotosViewController
 
-@synthesize item = _item;
-
-@synthesize numberOfColumns = _numberOfColumns;
-
-- (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
-{
-    self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
-    if (self) {
-        // Custom initialization
-    }
-    return self;
-}
-
 - (void)viewDidLoad
 {
+    self.resourceType = PhotoResource;
+    
+    if (IS_IPAD) {
+        NHBalancedFlowLayout *balancedLayout = [[NHBalancedFlowLayout alloc] init];
+        [balancedLayout setPreferredRowSize:self.view.frame.size.height/5];
+        [self.collectionView setCollectionViewLayout:balancedLayout animated:NO];
+    }
+    
     [super viewDidLoad];
     
     [self.view setBackgroundColor:[UIColor whiteColor]];
     
-    self.numberOfColumns = 3;
-    
     [self.navigationController.interactivePopGestureRecognizer setDelegate:nil];
     
-    [self.collectionView.viewForBaselineLayout.layer setSpeed:0.4f];
     [self.collectionView registerClass:[PhotoCell class] forCellWithReuseIdentifier:[self cellIdentifier]];
     [self.collectionView registerClass:[PhotosSectionHeaderView class] forSupplementaryViewOfKind:UICollectionElementKindSectionHeader withReuseIdentifier:[self sectionHeaderIdentifier]];
+    [self.collectionView registerClass:[FooterLoadingReusableView class] forSupplementaryViewOfKind:UICollectionElementKindSectionFooter withReuseIdentifier:[self footerIdentifier]];
     
-    //self.selectGesture = [[CollectionViewSelectCellGestureRecognizer alloc] initWithCollectionView:self.collectionView];
+    self.title = NSLocalizedString(@"Photos", nil);
     
-    self.resourceType = PhotoResource;
-    self.relationshipKeyPathWithItem = @"albums";
+    if (self.navigationController.viewControllers.count == 1) {
+        UIBarButtonItem *uploadButton = [[UIBarButtonItem alloc] initWithImage:[[UIImage imageNamed:@"upload"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] style:UIBarButtonItemStylePlain target:self action:@selector(didTapUploadButton:)];
+        [self.navigationItem setLeftBarButtonItem:uploadButton];
+    }
     
-    UIButton *settingButton = [[UIButton alloc] initWithFrame:CGRectMake(0, 0, 24, 24)];
-    [settingButton setImage:[[UIImage imageNamed:@"setting.png"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
-    [settingButton addTarget:self action:@selector(settingButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
-    UIBarButtonItem *settingBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:settingButton];
-    [self.navigationItem setRightBarButtonItem:settingBarButtonItem];
+    self.viewJustDidLoad = YES;
     
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(uploadNumberChangeNotification:) name:DLFAssetUploadDidChangeNumberOfUploadsNotification object:nil];
+    
+    [self configurePinchGesture];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
-    if (!self.observing) {
-        self.observing = YES;
-        JASidePanelController *panel = [UIViewController panelViewController];
-        if (panel) {
-            [panel addObserver:self forKeyPath:@"state" options:0 context:nil];
+    BOOL needToRestoreOffset = NO;
+    if (self.collectionView.contentOffset.y == -self.collectionView.contentInset.top) {
+        needToRestoreOffset = YES;
+    }
+    [self restoreContentInset];
+    if (needToRestoreOffset) {
+        self.collectionView.contentOffset = CGPointMake(0,  -self.collectionView.contentInset.top);
+    }
+    
+    if (self.viewJustDidLoad) {
+        self.viewJustDidLoad = NO;
+        self.currentSort = dateUploadedDescSortKey;
+        NSString *sortDefaultsKey = [NSString stringWithFormat:@"%@-%@", DLF_LAST_SELECTED_PHOTOS_SORT, self.item.itemId?:@""];
+        if ([[NSUserDefaults standardUserDefaults] objectForKey:sortDefaultsKey]) {
+            self.currentSort = [[NSUserDefaults standardUserDefaults] objectForKey:sortDefaultsKey];
+        }
+        [self selectSort:self.currentSort sortTableViewController:nil];
+        [[SyncEngine sharedEngine] startSyncingPhotosInCollection:nil collectionType:nil sort:self.currentSort];
+    } else {
+        if ([self doneUploadingNeedRefresh]) {
+            self.doneUploadingNeedRefresh = NO;
+            [self setRegisterSyncingNotification:YES];
+            [((YapDataSource *)self.dataSource) setPause:NO];
+            [self refresh];
+        } else {
+            [self pauseSyncing:NO];
         }
     }
     
-    if (![((AppDelegate *)[[UIApplication sharedApplication] delegate]) showUpdateInfoViewIfNeeded]) {
-        [self showPinchGestureTipIfNeeded];
+    if ([self.collectionView.collectionViewLayout isKindOfClass:[NHBalancedFlowLayout class]]) {
+        [(NHBalancedFlowLayout *)self.collectionView.collectionViewLayout setForceInvalidate:NO];
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    CLS_LOG(@"view will disappear");
+    [self pauseSyncing:YES];
+    if ([self.collectionView.collectionViewLayout isKindOfClass:[NHBalancedFlowLayout class]]) {
+        [(NHBalancedFlowLayout *)self.collectionView.collectionViewLayout setForceInvalidate:YES];
+    }
+}
+
+- (void)pauseSyncing:(BOOL)pause {
+    [self setRegisterSyncingNotification:!pause];
+    [((YapDataSource *)self.dataSource) setPause:pause];
+    [[SyncEngine sharedEngine] pauseSyncingPhotos:pause collection:nil collectionType:self.item.class];
+}
+
+- (void)configurePinchGesture {
+    if ([self.collectionView.collectionViewLayout isKindOfClass:[StickyHeaderFlowLayout class]]) {
+        if (!self.pinchGestureRecognizer) {
+            self.pinchGestureRecognizer = [[CollectionViewChangeColumnsNumberGestureRecognizer alloc] initWithCollectionView:self.collectionView numberOfColumnsKey:NSStringFromSelector(@selector(numberOfColumns))];
+            [self.pinchGestureRecognizer setDelegate:self];
+        } else {
+            [self.pinchGestureRecognizer setEnableGesture:YES];
+        }
+    } else {
+        if (self.pinchGestureRecognizer) {
+            [self.pinchGestureRecognizer setEnableGesture:NO];
+        }
     }
 }
 
@@ -120,12 +171,151 @@
 {
     [super didReceiveMemoryWarning];
     // Dispose of any resources that can be recreated.
+    
+    CLS_LOG(@"did receive memory warning");
+}
+
+#pragma mark - Buttons
+
+
+- (void)showRightBarButtonItem:(BOOL)show {
+    if (__showRightBarButtonItem != show) {
+        __showRightBarButtonItem = show;
+        if (show) {
+            if (IS_IPAD) {
+                UIBarButtonItem *leftItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"sort"] style:UIBarButtonItemStylePlain target:self action:@selector(didTapSortButton:)];
+                UIImage *layoutButtonImage;
+                if ([self.collectionView.collectionViewLayout isKindOfClass:[StickyHeaderFlowLayout class]]) {
+                    layoutButtonImage = [UIImage imageNamed:@"balance-layout"];
+                } else if ([self.collectionView.collectionViewLayout isKindOfClass:[NHBalancedFlowLayout class]]) {
+                    layoutButtonImage = [UIImage imageNamed:@"normal-layout"];
+                }
+                UIBarButtonItem *layoutItem = [[UIBarButtonItem alloc] initWithImage:layoutButtonImage style:UIBarButtonItemStylePlain target:self action:@selector(didTapChangeLayoutButton:)];
+                [self.navigationItem setRightBarButtonItems:@[leftItem, layoutItem]];
+            } else {
+                if (!self.navigationItem.rightBarButtonItem) {
+                    UIBarButtonItem *leftItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"sort"] style:UIBarButtonItemStylePlain target:self action:@selector(didTapSortButton:)];
+                    [self.navigationItem setRightBarButtonItem:leftItem];
+                }
+            }
+        } else {
+            [self.navigationItem setRightBarButtonItems:nil];
+        }
+    }
+}
+
+- (void)didTapChangeLayoutButton:(UIBarButtonItem *)sender {
+    [sender setEnabled:NO];
+    NSIndexPath *indexPath;
+    NSArray *visibleCell = [self.collectionView visibleCells];
+    CGFloat minimumVisibleY = self.collectionView.contentOffset.y + self.collectionView.contentInset.top;
+    for (UICollectionViewCell *cell in visibleCell) {
+        if (cell.frame.origin.y > minimumVisibleY) {
+            if (!indexPath) {
+                indexPath = [self.collectionView indexPathForCell:cell];
+            } else {
+                NSIndexPath *thisIndexPath = [self.collectionView indexPathForCell:cell];
+                NSComparisonResult result = [thisIndexPath compare:indexPath];
+                if (result == NSOrderedAscending) {
+                    indexPath = thisIndexPath;
+                }
+            }
+        }
+    }
+    
+    __weak typeof (self) selfie = self;
+    if (![self.collectionView.collectionViewLayout isKindOfClass:[NHBalancedFlowLayout class]]) {
+        NHBalancedFlowLayout *balancedLayout = [[NHBalancedFlowLayout alloc] init];
+        [balancedLayout setPreferredRowSize:self.collectionView.frame.size.height/5];
+        [balancedLayout setTargetIndexPath:indexPath];
+        [self.collectionView setCollectionViewLayout:balancedLayout animated:YES completion:^(BOOL finished) {
+            [sender setImage:[UIImage imageNamed:@"normal-layout"]];
+            [sender setEnabled:YES];
+            [selfie configurePinchGesture];
+        }];
+    } else {
+        StickyHeaderFlowLayout *sticky = [[StickyHeaderFlowLayout alloc] init];
+        [sticky setTargetIndexPath:indexPath];
+        [self.collectionView setCollectionViewLayout:sticky animated:YES completion:^(BOOL finished) {
+            [sender setImage:[UIImage imageNamed:@"balance-layout"]];
+            [sender setEnabled:YES];
+            [selfie configurePinchGesture];
+        }];
+    }
+}
+
+- (void)didTapSortButton:(id)sender {
+    SortTableViewController *sort = [[SortTableViewController alloc] initWithStyle:UITableViewStyleGrouped];
+    [sort setSortingDelegate:self];
+    [sort setSelectedSort:self.currentSort];
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:sort];
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
+- (void)didTapUploadButton:(id)sender {
+    if ([[ConnectionManager sharedManager] isGuestUser]) {
+        UIAlertController *alertController = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Demo account", nil) message:NSLocalizedString(@"You are viewing demo server at current.trovebox.com. Please login to your own account to upload.", nil) preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"Close", nil) style:UIAlertActionStyleCancel handler:nil];
+        UIAlertAction *loginAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"Login", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [[ConnectionManager sharedManager] logout];
+        }];
+        [alertController addAction:cancelAction];
+        [alertController addAction:loginAction];
+        [self presentViewController:alertController animated:YES completion:nil];
+    } else {
+        DLFPhotosPickerViewController *photosPicker = [[DLFPhotosPickerViewController alloc] init];
+        [photosPicker setPhotosPickerDelegate:self];
+        [photosPicker setMultipleSelections:YES];
+        [self presentViewController:photosPicker animated:YES completion:nil];
+    }
+}
+
+#pragma mark - SortingDelegate
+
+- (void)sortTableViewController:(id)sortTableViewController didSelectSort:(NSString *)sort {
+    if (![self.currentSort isEqualToString:sort]) {
+        self.currentSort = sort;
+        [[NSUserDefaults standardUserDefaults] setObject:self.currentSort forKey:[NSString stringWithFormat:@"%@-%@", DLF_LAST_SELECTED_PHOTOS_SORT, self.item.itemId?:@""]];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        
+        [[SyncEngine sharedEngine] refreshPhotosInCollection:self.item.itemId collectionType:self.item.class sort:self.currentSort];
+        
+        [self selectSort:self.currentSort sortTableViewController:sortTableViewController];
+    } else {
+        [sortTableViewController dismissViewControllerAnimated:YES completion:nil];
+    }
+}
+
+- (void)selectSort:(NSString *)sort sortTableViewController:(id)sortTableViewController {
+    PhotosSortKey selectedSortKey;
+    NSArray *sortArray = [sort componentsSeparatedByString:@","];
+    if ([[sortArray objectAtIndex:0] isEqualToString:NSStringFromSelector(@selector(dateTaken))]) {
+        selectedSortKey = PhotosSortKeyDateTaken;
+    } else {
+        selectedSortKey = PhotosSortKeyDateUploaded;
+    }
+    BOOL ascending = YES;
+    if ([[[sortArray objectAtIndex:1] lowercaseString] isEqualToString:@"desc"]) {
+        ascending = NO;
+    }
+    
+    if (sortTableViewController) {
+        [sortTableViewController dismissViewControllerAnimated:YES completion:^{
+            [((GroupedPhotosDataSource *)self.dataSource) sortBy:selectedSortKey ascending:ascending completion:nil];
+//            if ([self.collectionView.collectionViewLayout respondsToSelector:@selector(needToResetFrames)]) {
+//                [((id)self.collectionView.collectionViewLayout) setNeedToResetFrames:YES];
+//                [self.collectionView.collectionViewLayout invalidateLayout];
+//            }
+            
+        }];
+    } else {
+        [((GroupedPhotosDataSource *)self.dataSource) sortBy:selectedSortKey ascending:ascending completion:nil];
+    }
 }
 
 #pragma mark - ScrollView
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView {
-    [super scrollViewDidScroll:scrollView];
     
     if (self.headerImageView) {
         CGFloat headerHeight = self.headerImageView.intrinsicContentSize.height;
@@ -147,28 +337,44 @@
 - (CollectionViewHeaderCellConfigureBlock)headerCellConfigureBlock {
     __weak typeof (self) selfie = self;
     void (^configureCell)(PhotosSectionHeaderView*, id,NSIndexPath*) = ^(PhotosSectionHeaderView* cell, id item, NSIndexPath *indexPath) {
-        [cell setHidden:(selfie.numberOfColumns==1)?YES:NO];
-        [cell setTitleLabelText:[item localizedDate]];
+        cell.section = indexPath.section;
+        NSInteger section = indexPath.section;
+        [cell setTitleLabelText:[item localizedDate]?:@""];
         CLLocation *location = [selfie locationSampleForSection:indexPath.section];
         if (location) {
-            [[LocationManager sharedManager] nameForLocation:location completionHandler:^(NSArray *placemarks, NSError *error) {
-                if (!error && placemarks && placemarks.count > 0) {
-                    [cell setLocation:placemarks[0]];
-                } else {
-                    [cell setLocation:nil];
+            [[[LocationManager sharedManager] nameForLocation:location] continueWithBlock:^id(BFTask *task) {
+                CLPlacemark *firstPlacemark = [((NSArray *)task.result) firstObject];
+                NSString *placemark = [firstPlacemark locationString];
+                if (cell.section == section) {
+                    if (placemark && placemark.length > 0) {
+                        [cell setLocationString:placemark];
+                    } else {
+                        [cell setLocationString:nil];
+                    }
                 }
+                return nil;
             }];
         } else {
-            [cell setLocation:nil];
+            [cell setLocationString:nil];
         }
     };
     return configureCell;
 }
 
 - (CollectionViewCellConfigureBlock)cellConfigureBlock {
+    __weak typeof (self) selfie = self;
     void (^configureCell)(PhotoCell*, id) = ^(PhotoCell* cell, id item) {
         [cell setItem:item];
-        [cell setNumberOfColumns:self.numberOfColumns];
+        if ([selfie.collectionView.collectionViewLayout isKindOfClass:[StickyHeaderFlowLayout class]]) {
+            NSInteger numberOfColumns = [((StickyHeaderFlowLayout *)selfie.collectionView.collectionViewLayout) numberOfColumns];
+            if (numberOfColumns > 1) {
+                [cell setShowTitles:NO];
+            } else {
+                [cell setShowTitles:YES];
+            }
+        } else {
+            [cell setShowTitles:NO];
+        }
     };
     return configureCell;
 }
@@ -189,139 +395,19 @@
     return @"photoSection";
 }
 
+- (NSString *)footerIdentifier {
+    return @"loadingFooter";
+}
+
 - (Class)resourceClass {
     return [Photo class];
 }
 
-- (NSString *)resourceId {
-    return self.item.itemId;
-}
-
 - (Class)dataSourceClass {
-    return [PhotosDataSource class];
+    return [GroupedPhotosDataSource class];
 }
 
-- (void)refresh {
-    if ([self itemIsDownloadHistoryOrFavorites]) {
-        Album *album = (Album *)self.item;
-        [self.dataSource removeAllItems];
-        [self.dataSource addItems:album.photos];
-        [self.refreshControl endRefreshing];
-        
-        [self addOrRemoveHeaderView];
-        
-        if ([self.dataSource items].count == 0) {
-            if (!self.noPhotosView) {
-                NoPhotosView *noPhotos = (NoPhotosView *)[[[NSBundle mainBundle] loadNibNamed:NSStringFromClass([NoPhotosView class]) owner:nil options:nil] firstObject];
-                [noPhotos setFrame:self.view.bounds];
-                [self.view addSubview:noPhotos];
-                self.noPhotosView = noPhotos;
-            }
-            NSString *text;
-            if ([album.albumId isEqualToString:PBX_downloadHistoryIdentifier]) {
-                text = NSLocalizedString(@"Photos you have downloaded and saved to Camera Roll will appear here.", nil);
-            } else if ([album.albumId isEqualToString:PBX_favoritesAlbumIdentifier]) {
-                text = NSLocalizedString(@"Favorited photos will appear here. Favorited photos are not saved to Camera Roll and Trovebox server.", nil);
-            }
-            [self.noPhotosView.textLabel setText:text];
-            
-        } else {
-            [self.noPhotosView removeFromSuperview];
-        }
-        return;
-    }
-    
-    [self addOrRemoveHeaderView];
-    [self.noPhotosView removeFromSuperview];
-    
-    [super refresh];
-}
-
-- (void)refreshIfNeeded {
-    if ([self itemIsDownloadHistoryOrFavorites]) {
-        [self refresh];
-        return;
-    }
-    if (![self.item needRefresh]) {
-        NSArray *photos = [(id)self.item photos];
-        if (photos) {
-            [self willLoadDataFromCache];
-            
-            [self.dataSource removeAllItems];
-            [self.dataSource addItems:photos];
-            [self.collectionView reloadData];
-            
-            [self didLoadDataFromCache];
-        } else {
-            [self refresh];
-        }
-    } else {
-        [self refresh];
-    }
-}
-
-- (void)didLoadDataFromCache {
-    [self addOrRemoveHeaderView];
-    [self.noPhotosView removeFromSuperview];
-    [self restoreContentInset];
-    
-    NSInteger count = [self.dataSource numberOfItems];
-    NSInteger totalPhotos = [(id)self.item totalPhotos];
-    [self setPhotosCount:count max:totalPhotos];
-    
-    self.page = ceil((double)count/(double)self.pageSize);
-    self.totalPages = ceil((double)totalPhotos/(double)self.pageSize);
-    self.totalItems = totalPhotos;
-    
-    [self.collectionView setContentOffset:CGPointMake(0, -self.collectionView.contentInset.top)];
-}
-
-- (void)addOrRemoveHeaderView {
-    if ([self.item isKindOfClass:[Album class]]) {
-        Album *a = (Album *)self.item;
-        if (![a.albumId isEqualToString:PBX_allAlbumIdentifier] && ![a.albumId isEqualToString:PBX_downloadHistoryIdentifier] && ![a.albumId isEqualToString:PBX_favoritesAlbumIdentifier]) {
-            if (!self.headerImageView) {
-                HeaderImageView *head = [[[NSBundle mainBundle] loadNibNamed:NSStringFromClass([HeaderImageView class]) owner:nil options:nil] firstObject];
-                [self.view insertSubview:head aboveSubview:self.collectionView];
-                self.headerImageView = head;
-                CGFloat headerHeight = self.headerImageView.intrinsicContentSize.height;
-                [self.headerImageView setFrame:CGRectMake(0, 64, CGRectGetWidth(self.view.frame), headerHeight-64)];
-                                UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(headerImageViewTapped:)];
-                [self.headerImageView addGestureRecognizer:tap];
-            }
-            
-            [self.headerImageView.imageView npr_setImageWithURL:a.albumCover.pathOriginal placeholderImage:a.albumThumbnailImage];
-            [self setTitle:a.name];
-            a.albumCover.asAlbumCoverImage = a.albumThumbnailImage;
-            a.albumCover.asAlbumCoverURL = a.coverURL;
-            
-            CGFloat headerHeight = self.headerImageView.intrinsicContentSize.height;
-            self.collectionView.contentInset = ({
-                UIEdgeInsets inset = self.collectionView.contentInset;
-                inset.top = headerHeight;
-                inset;
-            });
-            
-            [self.collectionView setBackgroundColor:[UIColor clearColor]];
-            StickyHeaderFlowLayout *layout = (StickyHeaderFlowLayout *)self.collectionView.collectionViewLayout;
-            [layout setTopOffsetAdjustment:headerHeight-CGRectGetHeight(self.navigationController.navigationBar.frame) - 20];
-            
-            return;
-        }
-        
-    }
-    
-    StickyHeaderFlowLayout *layout = (StickyHeaderFlowLayout *)self.collectionView.collectionViewLayout;
-    [layout setTopOffsetAdjustment:0];
-    
-    [self.headerImageView removeFromSuperview];
-    self.headerImageView = nil;
-    [self restoreContentInset];
-}
-
-- (void)restoreContentInset {
-    PBX_LOG(@"");
-    
+- (void)restoreContentInset {    
     if (self.headerImageView) {
         CGFloat headerHeight = self.headerImageView.intrinsicContentSize.height;
         self.collectionView.contentInset = ({
@@ -331,64 +417,19 @@
         });
         self.collectionView.scrollIndicatorInsets = self.collectionView.contentInset;
     } else {
-        NSLog(@"shold be here right");
-        [super restoreContentInset];
+        [super restoreContentInsetForSize:self.view.frame.size];
+        self.collectionView.contentInset = ({
+            UIEdgeInsets inset = self.collectionView.contentInset;
+            inset;
+        });
+        self.collectionView.scrollIndicatorInsets = self.collectionView.contentInset;
     }
-    
-}
-
-- (BOOL)itemIsDownloadHistoryOrFavorites {
-    if ([self.item isKindOfClass:[Album class]]) {
-        Album *album = (Album *)self.item;
-        if ([album.albumId isEqualToString:PBX_downloadHistoryIdentifier] ||[album.albumId isEqualToString:PBX_favoritesAlbumIdentifier]) {
-            return YES;
-        }
-    }
-    return NO;
-}
-
-- (void)fetchMore {
-    if ([self itemIsDownloadHistoryOrFavorites]) {
-        return;
-    } else {
-        [super fetchMore];
-    }
-}
-
-- (void)processPaginationFromObjects:(id)objects {
-    [super processPaginationFromObjects:objects];
-    
-    [(id)self.item setTotalPhotos:self.totalItems];
-}
-
-- (void)userDidLogout {
-    self.item = [Album allPhotosAlbum];
-    [self addOrRemoveHeaderView];
-    [self setTitle:NSLocalizedString(@"Gallery", nil)];
 }
 
 #pragma mark - Do something
 
-- (void)settingButtonTapped:(id)sender {
-    SettingsTableViewController *settings = [[SettingsTableViewController alloc] initWithStyle:UITableViewStyleGrouped];
-    UINavigationController *navCon = [[UINavigationController alloc] initWithRootViewController:settings];
-    [self presentViewController:navCon animated:YES completion:nil];
-}
-
 - (void)backNavigationTapped:(id)sender {
     [self.navigationController popViewControllerAnimated:YES];
-}
-
-- (void)setupBackNavigationItemTitle {
-    if (self.item) {
-        if ([self.item isKindOfClass:[Album class]]) {
-            [self setBackButtonNavigationItemTitle:((Album *)self.item).name];
-        } else if ([self.item isKindOfClass:[Tag class]]) {
-            [self setBackButtonNavigationItemTitle:((Tag *)self.item).tagId];
-        }
-    } else {
-        [self setBackButtonNavigationItemTitle:nil];
-    }
 }
 
 - (void)setBackButtonNavigationItemTitle:(NSString *)title {
@@ -399,47 +440,6 @@
         [self.navigationItem setBackBarButtonItem:[[UIBarButtonItem alloc] initWithTitle:@"Back" style:UIBarButtonItemStylePlain target:self action:@selector(backNavigationTapped:)]];
     }
     [self.navigationItem.backBarButtonItem setTitle:title];
-}
-
-- (void)showLoadingView:(BOOL)show {
-    DelightfulLayout *layout = (DelightfulLayout *)self.collectionView.collectionViewLayout;
-    [layout updateLastIndexPath];
-    [layout setShowLoadingView:show];
-    
-    CGFloat centerY = LOADING_VIEW_HEIGHT/2;
-    if (layout.lastIndexPath && layout.lastIndexPath.section != NSIntegerMin && layout.lastIndexPath.item != NSIntegerMin) {
-        centerY += CGRectGetMaxY([layout layoutAttributesForItemAtIndexPath:layout.lastIndexPath].frame);
-    }
-    
-    [self showLoadingView:show atCenterY:centerY];
-    [layout invalidateLayout];
-}
-
-- (void)setNumberOfColumns:(int)numberOfColumns {
-    if (_numberOfColumns != numberOfColumns) {
-        _numberOfColumns = numberOfColumns;
-                
-        DelightfulLayout *layout = (DelightfulLayout *)self.collectionView.collectionViewLayout;
-        [layout setNumberOfColumns:_numberOfColumns];
-    }
-}
-
-- (void)didFetchItems {
-    NSInteger count = [self.dataSource numberOfItems];
-    [self setPhotosCount:count max:self.totalItems];
-    
-    [self.item setLastRefresh:[NSDate date]];
-    [self.item setValue:self.dataSource.flattenedItems forKey:NSStringFromSelector(@selector(photos))];
-}
-
-- (NSString *)refreshKey {
-    return [NSString stringWithFormat:@"%@-%@", NSStringFromClass([self.item class]), [self.item itemId]];
-}
-
-- (void)didChangeNumberOfColumns {
-    for (PhotoCell *cell in self.collectionView.visibleCells) {
-        [cell setNumberOfColumns:self.numberOfColumns];
-    }
 }
 
 - (void)showPinchGestureTipIfNeeded {
@@ -462,90 +462,89 @@
     
 }
 
-- (void)headerImageViewTapped:(id)sender {
-    self.selectedCell = nil;
-    Album *album = (Album *)self.item;
-    [self openPhoto:(id)album.albumCover index:0 items:@[album.albumCover]];
-}
+#pragma mark - <NHBalancedFlowLayoutDelegate>
 
-#pragma mark - Setters
-
-- (void)setPhotosCount:(int)count max:(int)max{
-    if ([self itemIsDownloadHistoryOrFavorites]) {
-        Album *album = (Album *)self.item;
-        self.title = album.name;
-        return;
-    }
-    NSString *title = NSLocalizedString(@"Photos", nil);
-    if ([self.item isKindOfClass:[Album class]]) {
-        Album *album = (Album *)self.item;
-        if (album) {
-            title = album.name;
-        }
-    } else if ([self.item isKindOfClass:[Tag class]]) {
-        Tag *tag = (Tag *)self.item;
-        if (tag) {
-            title = [NSString stringWithFormat:@"#%@", tag.tagId];
-        }
-    }
-    if (count == 0) {
-        self.title = title;
-    } else {
-        if (count != max) [self setTitle:title subtitle:[NSString stringWithFormat:NSLocalizedString(@"%1$d of %2$d", nil), count, max]];
-        else [self setTitle:title subtitle:[NSString stringWithFormat:@"%d photos", count]];
-    }
-}
-
-- (void)setSelectedItemRectAtIndexPath:(NSIndexPath *)indexPath {
-    UICollectionViewLayoutAttributes *attributes = [self.collectionView.collectionViewLayout layoutAttributesForItemAtIndexPath:indexPath];
-    self.selectedItemRect = attributes.frame;
-}
-
-#pragma mark - Collection view flow layout delegate
-
-- (UIEdgeInsets)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout insetForSectionAtIndex:(NSInteger)section {
-    if (self.numberOfColumns == 1) {
-        return UIEdgeInsetsMake(5, 0, 0, 0);
-    }
-    return UIEdgeInsetsZero;
+- (CGSize)collectionView:(UICollectionView *)collectionView layout:(NHBalancedFlowLayout *)collectionViewLayout preferredSizeForItemAtIndexPath:(NSIndexPath *)indexPath {
+    Photo *photo = [self.dataSource itemAtIndexPath:indexPath];
+    CGSize size = CGSizeMake([photo.width floatValue], [photo.height floatValue]);
+    CGFloat preferredHeight = 200;
+    CGFloat width = preferredHeight * size.width/size.height;
+    CGSize preferredSize = CGSizeMake(width, preferredHeight);
+    //
+    return preferredSize;
 }
 
 #pragma mark - Collection view delegate
 
 - (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
-    PhotoBoxCell *cell = (PhotoBoxCell *)[collectionView cellForItemAtIndexPath:indexPath];
-    NSInteger index = [self.dataSource positionOfItem:cell.item];
-    NSArray *items = self.dataSource.flattenedItems;
-    self.selectedCell = cell;
-    [self setSelectedItemRectAtIndexPath:indexPath];
+    [self pauseSyncing:YES];
     
-    [self openPhoto:cell.item index:index items:items];
+    PhotoBoxCell *cell = (PhotoBoxCell *)[collectionView cellForItemAtIndexPath:indexPath];
+    Photo *photo = (Photo *)cell.item;
+    self.selectedItem = photo;
+    
+    [self openPhoto:cell.item];
 }
 
-- (void)openPhoto:(Photo *)photo index:(NSInteger)index items:(NSArray *)items {
-    PhotosHorizontalScrollingViewController *destination = [[PhotosHorizontalScrollingViewController alloc] initWithCollectionViewLayout:[[UICollectionViewFlowLayout alloc] init]];
+- (void)openPhoto:(Photo *)photo{
+    [self viewWillDisappear:YES];
     
-    [destination setItem:self.item];
-    [destination.dataSource addItems:items];
+    PhotosHorizontalScrollingYapBackedViewController *destination = [PhotosHorizontalScrollingYapBackedViewController defaultControllerWithViewMapping:[((GroupedPhotosDataSource *)self.dataSource) selectedFlattenedViewMapping]];
     [destination setFirstShownPhoto:photo];
-    [destination setFirstShownPhotoIndex:index];
     [destination setDelegate:self];
-    [destination setRelationshipKeyPathWithItem:self.relationshipKeyPathWithItem];
-    [destination setResourceType:self.resourceType];
-    if ([self itemIsDownloadHistoryOrFavorites]) {
-        [destination setHideDownloadButton:YES];
+    if (!self.transitionDelegate) {
+        self.transitionDelegate = [[ShowFullScreenTransitioningDelegate alloc] init];
+    }
+    UINavigationController *navCon = [[UINavigationController alloc] initWithRootViewController:destination];
+    [navCon setTransitioningDelegate:self.transitionDelegate];
+    [navCon setModalPresentationStyle:UIModalPresentationCustom];
+    
+    {
+        UIButton *label = [[UIButton alloc] init];
+        NSMutableAttributedString *leftArrow = [[NSAttributedString symbol:dlf_icon_arrow_left3 size:25] mutableCopy];
+        //[leftArrow addAttribute:NSBaselineOffsetAttributeName value:@(-4) range:NSMakeRange(0, leftArrow.string.length)];
+        [leftArrow addAttribute:NSForegroundColorAttributeName value:self.view.tintColor range:NSMakeRange(0, leftArrow.string.length)];
+        NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithAttributedString:leftArrow];
+        [label setAttributedTitle:attr forState:UIControlStateNormal];
+        
+        NSMutableAttributedString *selectedAttr = [[NSMutableAttributedString alloc] initWithAttributedString:attr];
+        [selectedAttr addAttribute:NSForegroundColorAttributeName value:[UIColor lightGrayColor] range:NSMakeRange(0, selectedAttr.string.length)];
+        [label setAttributedTitle:selectedAttr forState:UIControlStateHighlighted];
+        
+        [label sizeToFit];
+        [label addTarget:self action:@selector(didTapHorizontalBackButton:) forControlEvents:UIControlEventTouchUpInside];
+        
+        UIBarButtonItem *leftItem = [[UIBarButtonItem alloc] initWithCustomView:label];
+        UIBarButtonItem *leftSpaceItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
+        [leftSpaceItem setWidth:-10];
+        
+        [destination.navigationItem setLeftBarButtonItems:@[leftSpaceItem, leftItem]];
     }
     
-    [self setupBackNavigationItemTitle];
-    
-    [self.navigationController pushViewController:destination animated:YES];
+    [self presentViewController:navCon animated:YES completion:nil];
+}
+
+- (void)didTapHorizontalBackButton:(id)sender {
+    [self shouldClosePhotosHorizontalViewController:nil];
+}
+
+#pragma mark - <CollectionViewChangeColumnsNumberGestureRecognizerDelegate>
+
+- (void)didChangeNumberOfColumns:(NSInteger)newNumberOfColumns {
+    for (PhotoCell *cell in self.collectionView.visibleCells) {
+        if (newNumberOfColumns > 1) {
+            [cell setShowTitles:NO];
+        } else {
+            [cell setShowTitles:YES];
+        }
+    }
 }
 
 #pragma mark - CustomAnimationTransitionFromViewControllerDelegate
 
 - (UIImage *)imageToAnimate {
-    if (self.selectedCell) {
-        return self.selectedCell.cellImageView.image;
+    if (self.selectedItem) {
+        return ((PhotoBoxCell *)self.selectedCell).cellImageView.image;
     }
     if (self.headerImageView) {
         return self.headerImageView.imageView.image;
@@ -554,22 +553,30 @@
 }
 
 - (CGRect)startRectInContainerView:(UIView *)containerView {
-    if (self.selectedCell) {
+    if (self.selectedItem) {
         return [self.selectedCell convertFrameRectToView:containerView];
     }
     return [self.headerImageView.imageView convertFrameRectToView:containerView];
 }
 
 - (CGRect)endRectInContainerView:(UIView *)containerView {
-    if (self.selectedCell) {
-        CGRect originalPosition = CGRectOffset(self.selectedItemRect, 0, self.collectionView.contentInset.top);
+    if (self.selectedItem) {
+        NSIndexPath *indexPath = [self.dataSource indexPathOfItem:self.selectedItem];
+        UICollectionViewLayoutAttributes *attributes = [self.collectionView.collectionViewLayout layoutAttributesForItemAtIndexPath:indexPath];
+        CGRect originalPosition = CGRectOffset(attributes.frame, 0, self.collectionView.contentInset.top);
         CGFloat adjustment = self.collectionView.contentOffset.y + self.collectionView.contentInset.top;
         return CGRectOffset(originalPosition, 0, -adjustment);
     } else {
         return self.headerImageView.frame;
     }
     return CGRectZero;
-    
+}
+
+- (UIView *)destinationViewOnDismiss {
+    if (self.selectedItem) {
+        return self.selectedCell;
+    }
+    return self.headerImageView;
 }
 
 - (UIView *)viewToAnimate {
@@ -579,49 +586,185 @@
 #pragma mark - PhotosHorizontalScrollingViewControllerDelegate
 
 - (void)photosHorizontalScrollingViewController:(PhotosHorizontalScrollingViewController *)viewController didChangePage:(NSInteger)page item:(Photo *)item {
-    PBX_LOG(@"Change page %d of %d", page, [self.dataSource numberOfItems]);
-    NSIndexPath *indexPath = [self.dataSource indexPathOfItem:item];
+    self.selectedItem = item;
+    NSIndexPath *indexPath = [self.dataSource indexPathOfItem:self.selectedItem];
     if (indexPath) {
-        PBX_LOG(@"Index path target section %d row %d", indexPath.section, indexPath.item);
-        PBX_LOG(@"Current number of sections %d. Number of items in section = %d", [self.collectionView numberOfSections], [self.collectionView numberOfItemsInSection:indexPath.section]);
-        
-        if (indexPath.section < [self.collectionView numberOfSections]) {            
-            [self setSelectedItemRectAtIndexPath:indexPath];
-            
-            [self.collectionView scrollRectToVisible:self.selectedItemRect animated:NO];
+        if (indexPath.section < [self.collectionView numberOfSections]) {
+            [self.collectionView scrollToItemAtIndexPath:indexPath atScrollPosition:UICollectionViewScrollPositionCenteredVertically animated:NO];
         }
     }
     
 }
 
-- (UIView *)snapshotView {
-    return [self.view snapshotViewAfterScreenUpdates:YES];
+- (void)shouldClosePhotosHorizontalViewController:(PhotosHorizontalScrollingViewController *)controller {
+    UICollectionViewCell *selectedCell = self.selectedCell;
+    for (UICollectionViewCell *cell in self.collectionView.visibleCells) {
+        if (cell != selectedCell) {
+            [cell setAlpha:1];
+        }
+    }
+    [[UIApplication sharedApplication] setStatusBarHidden:NO withAnimation:UIStatusBarAnimationFade];
+    [self dismissViewControllerAnimated:YES completion:^{
+        for (UICollectionViewCell *cell in self.collectionView.visibleCells) {
+            [cell setAlpha:1];
+        }
+        [selectedCell setAlpha:1];
+        self.selectedItem = nil;
+    }];
 }
 
-- (CGRect)selectedItemRectInSnapshot {
-    return [self endRectInContainerView:nil];
+- (void)willDismissViewController:(PhotosHorizontalScrollingViewController *)controller {
+    UICollectionViewCell *selectedCell = self.selectedCell;
+    [selectedCell setAlpha:0];
+    for (UICollectionViewCell *cell in self.collectionView.visibleCells) {
+        if (cell != selectedCell) {
+            [cell setAlpha:1];
+        }
+    }
 }
 
-- (void)photosHorizontalWillClose {
-    [self setNavigationBarHidden:NO animated:YES];
+- (void)cancelDismissViewController:(PhotosHorizontalScrollingViewController *)controller {
+    [self.selectedCell setAlpha:1];
 }
 
 #pragma mark - Location
 
 - (CLLocation *)locationSampleForSection:(NSInteger)sectionIndex {
-    CLLocation *location;
-    NSArray *photos = [self.dataSource items][sectionIndex];
-    for (Photo *photo in photos) {
-        NSNumber *latitude = [photo valueForKey:@"latitude"];
-        NSNumber *longitude = [photo valueForKey:@"longitude"];
-        if (latitude && ![latitude isKindOfClass:[NSNull class]] && longitude && ![longitude isKindOfClass:[NSNull class]]) {
-            location = [[CLLocation alloc] initWithLatitude:[latitude doubleValue] longitude:[longitude doubleValue]];
-            
-            break;
+    __block CLLocation *location;
+    
+    [self.dataSource enumerateKeysAndObjectsInSection:sectionIndex usingBlock:^(NSString *collection, NSString *key, Photo *photo, NSUInteger index, BOOL *stop) {
+        location = [photo clLocation];
+        if (location) {
+            *stop = YES;
         }
-    }
+    }];
+    
     return location;
 }
 
+#pragma mark - DLFPhotosPickerViewControllerDelegate
+
+- (void)photosPicker:(DLFPhotosPickerViewController *)photosPicker detailViewController:(DLFDetailViewController *)detailViewController didSelectPhotos:(NSArray *)photos {
+    NSMutableArray *assets = [NSMutableArray arrayWithCapacity:photos.count];
+    for (PHAsset *photo in photos) {
+        DLFAsset *asset = [[DLFAsset alloc] init];
+        asset.asset = photo;
+        [assets addObject:asset];
+    }
+    TagsAlbumsPickerViewController *tagsalbumspicker = [[TagsAlbumsPickerViewController alloc] initWithStyle:UITableViewStyleGrouped];
+    [tagsalbumspicker setSelectedAssets:assets];
+    [tagsalbumspicker setDelegate:self];
+        
+    [detailViewController.navigationController pushViewController:tagsalbumspicker animated:YES];
+}
+
+- (void)photosPickerDidCancel:(DLFPhotosPickerViewController *)photosPicker {
+    [photosPicker dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)photosPicker:(DLFPhotosPickerViewController *)photosPicker
+detailViewController:(DLFDetailViewController *)detailViewController
+       configureCell:(DLFPhotoCell *)cell
+           indexPath:(NSIndexPath *)indexPath
+               asset:(PHAsset *)asset {
+    __block NSString *status;
+    [[[DLFDatabaseManager manager] readConnection] readWithBlock:^(YapDatabaseReadTransaction *transaction) {
+        status = [transaction objectForKey:asset.localIdentifier inCollection:uploadedCollectionName];
+    }];
+    
+    UIImageView *uploadedView = (UIImageView *)[cell.contentView viewWithTag:UPLOADED_MARK_TAG];
+    if ([status isEqualToString:photoUploadedKey]) {
+        if (!uploadedView) {
+            uploadedView = [[UIImageView alloc] initWithImage:[[UIImage imageNamed:@"uploaded"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
+            [uploadedView setTranslatesAutoresizingMaskIntoConstraints:NO];
+            [uploadedView setTintColor:[UIColor whiteColor]];
+            [cell.contentView addSubview:uploadedView];
+            [uploadedView setTag:UPLOADED_MARK_TAG];
+            [uploadedView.layer setShadowColor:[[UIColor blackColor] CGColor]];
+            [uploadedView.layer setShadowRadius:1];
+            [uploadedView.layer setShadowOffset:CGSizeMake(0, 1)];
+            [uploadedView.layer setShadowOpacity:1];
+            [uploadedView autoPinEdgeToSuperviewEdge:ALEdgeBottom withInset:5];
+            [uploadedView autoPinEdgeToSuperviewEdge:ALEdgeRight withInset:5];
+            [uploadedView autoSetDimensionsToSize:CGSizeMake(30, 30)];
+        }
+        [uploadedView setHidden:NO];
+    } else {
+        [uploadedView setHidden:YES];
+    }
+}
+
+#pragma mark - Tags Albums Picker View Controller Delegate
+
+- (void)tagsAlbumsPickerViewController:(TagsAlbumsPickerViewController *)tagsAlbumsPickerViewController didFinishSelectTagsAndAlbum:(NSArray *)assets {
+    [self.presentedViewController dismissViewControllerAnimated:YES completion:^{
+        CLS_LOG(@"+++ Gonna show upload view");
+        UploadViewController *uploadVC = [[UploadViewController alloc] init];
+        [uploadVC setDelegate:self];
+        UINavigationController *navCon = [[UINavigationController alloc] initWithRootViewController:uploadVC];
+        
+        self.uploadViewController = uploadVC;
+        
+        [self presentViewController:navCon animated:YES completion:^{
+            
+            for (DLFAsset *asset in assets) {
+                [[DLFImageUploader sharedUploader] queueAsset:asset];
+            }
+            
+            BFTask *uploadingTask = [[DLFImageUploader sharedUploader] uploadingTask];
+            [uploadingTask continueWithBlock:^id(BFTask *t) {
+                BFTask *task = [BFTask taskWithResult:nil];
+                NSMutableArray *phAssets = [NSMutableArray arrayWithCapacity:assets.count];
+                for (DLFAsset *asset in assets) {
+                    if (asset.scaleAfterUpload) {
+                        [phAssets addObject:asset.asset];
+                        task = [task continueWithBlock:^id(BFTask *task) {
+                            return [[PHPhotoLibrary sharedPhotoLibrary] resizeAndCreateNewAsset:asset.asset scale:0.5];
+                        }];
+                    }
+                }
+                
+                if (phAssets.count > 0) {
+                    return [task continueWithBlock:^id(BFTask *task) {
+                        return [[PHPhotoLibrary sharedPhotoLibrary] deleteAssets:phAssets];
+                    }];
+                }
+                
+                return task;
+            }];
+        }];
+    }];
+}
+
+#pragma mark - UploadViewControllerDelegate
+
+- (void)uploadViewControllerDidClose:(UploadViewController *)uploadViewController {
+    CLS_LOG(@"+++ dismissing upload");
+    [uploadViewController dismissViewControllerAnimated:YES completion:^{
+    }];
+}
+
+- (void)uploadViewControllerDidFinishUploading:(UploadViewController *)uploadViewController {
+    [uploadViewController dismissViewControllerAnimated:YES completion:^{
+        CLS_LOG(@"+++ did finish uploading and closing upload vc");
+           [self refresh];
+    }];
+}
+
+#pragma mark - Upload Notification
+
+- (void)uploadNumberChangeNotification:(NSNotification *)notification {
+    int numberOfUploads = [notification.userInfo[kNumberOfUploadsKey] intValue];
+    if (numberOfUploads == 0 && !self.presentedViewController) {
+        if ([(YapDataSource *)self.dataSource pause]) {
+            CLS_LOG(@"+++ upload done but paused");
+            [self setDoneUploadingNeedRefresh:YES];
+        } else {
+            [self setDoneUploadingNeedRefresh:NO];
+            [self refresh];
+        }
+        
+    }
+}
 
 @end

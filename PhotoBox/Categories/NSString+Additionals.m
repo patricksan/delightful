@@ -22,7 +22,7 @@
 
 - (NSString *)stringWithHttpSchemeAddedIfNeeded {
     NSString *urlToTest = self;
-    if (![self hasPrefix:@"http://"]) {
+    if (![self hasPrefix:@"http://"] && ![self hasPrefix:@"https://"]) {
         urlToTest = [NSString stringWithFormat:@"http://%@", self];
     }
     return urlToTest;
@@ -53,7 +53,8 @@
 }
 
 - (NSString *)localizedDate {
-    return [NSDateFormatter localizedStringFromDate:[self date] dateStyle:NSDateFormatterLongStyle timeStyle:NSDateFormatterNoStyle];
+    NSDate *date = [self date];
+    return [NSDateFormatter localizedStringFromDate:date dateStyle:NSDateFormatterLongStyle timeStyle:NSDateFormatterNoStyle];
 }
 
 - (NSString *)htmlLinkString {

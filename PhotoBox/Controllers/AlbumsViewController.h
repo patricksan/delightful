@@ -6,7 +6,7 @@
 //  Copyright (c) 2013 Touches. All rights reserved.
 //
 
-#import "PhotoBoxViewController.h"
+#import "PhotosCollectionWithSearchViewController.h"
 
 @protocol AlbumsViewControllerScrollDelegate <NSObject>
 
@@ -15,16 +15,10 @@
 
 @end
 
-@interface AlbumsViewController : PhotoBoxViewController
-
-- (void)tapOnAllAlbum:(UITapGestureRecognizer *)gesture;
-
-- (void)restoreContentInset;
+@interface AlbumsViewController : PhotosCollectionWithSearchViewController
 
 @property (nonatomic, weak) id<AlbumsViewControllerScrollDelegate>scrollDelegate;
 
 @property (nonatomic, assign) CGFloat headerViewHeight;
-
-- (void)scrollToTheTop;
 
 @end
